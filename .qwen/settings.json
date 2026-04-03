@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo doc *)",
+      "Bash(grep *)",
+      "Bash(cargo test *)",
+      "Bash(cargo bench *)",
+      "Bash(tee *)",
+      "Bash(sed *)",
+      "Bash(sudo *)",
+      "Bash(awk *)",
+      "Bash(do *)",
+      "Bash(head *)",
+      "Bash(done)",
+      "Bash(cargo install *)",
+      "Bash(perf *)"
+    ]
+  },
+  "$version": 3
+}

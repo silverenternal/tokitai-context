@@ -1,0 +1,344 @@
+{
+  "document_info": {
+    "title": "FileKV Optimization Plan",
+    "version": "1.0",
+    "date": "2026-04-02",
+    "author": "P11 Code Review",
+    "target_module": "tokitai-context/crates/tokitai-context/src/file_kv.rs"
+  },
+  
+  "executive_summary": {
+    "conclusion": "FileKV is a core competitive advantage, not technical debt",
+    "strategic_value": [
+      "Zero-dependency pure Rust implementation",
+      "LSM-Tree architecture perfectly matches AI conversation patterns",
+      "Batch performance 0.26µs/item proves architecture potential",
+      "Full observability with stats, logging, and config validation"
+    ],
+    "current_baseline": {
+      "single_write": "~45µs",
+      "batch_write_1000_items": "0.26µs/item (170x improvement)",
+      "hot_read": "~47µs",
+      "bloom_filter_negative": "~66µs"
+    },
+    "expected_after_optimization": {
+      "single_write": "~15-20µs (3x improvement)",
+      "batch_write_1000_items": "0.26µs/item (maintain)",
+      "hot_read": "~3-5µs (10x improvement)",
+      "bloom_filter_negative": "~1µs (66x improvement)"
+    }
+  },
+
+  "core_advantages": {
+    "strategic_positioning": {
+      "description": "FileKV is a specialized engine for AI conversation scenarios, not a general-purpose KV store",
+      "ai_conversation_patterns": {
+        "write_heavy": "MemTable batch writes amortize I/O cost",
+        "append_only": "Segment sequential append, no random writes",
+        "session_isolation": "key = session:hash provides natural isolation",
+        "hotspot_concentration": "BlockCache caches recent conversations",
+        "crash_recovery": "WAL ensures conversations are not lost",
+        "semantic_deletion": "Tombstone marking, cleaned during compaction"
+      },
+      "comparison_with_alternatives": {
+        "rocksdb": {
+          "dependency": "rocksdb-sys (C++ bindings)",
+          "build_complexity": "High",
+          "customizability": "Low",
+          "maintenance": "Active"
+        },
+        "sled": {
+          "dependency": "Pure Rust",
+          "build_complexity": "Low",
+          "customizability": "Medium",
+          "maintenance": "Stopped"
+        },
+        "filekv": {
+          "dependency": "Pure Rust",
+          "build_complexity": "Low",
+          "customizability": "High",
+          "maintenance": "Active"
+        }
+      }
+    },
+    
+    "architecture_validation": {
+      "benchmark_insights": {
+        "single_write_baseline": "~45µs comes from open() init + Mutex + String allocation",
+        "batch_write_potential": "0.26µs/item shows true LSM-Tree performance",
+        "comparison": "RocksDB single write is also ~40-50µs (similar baseline)"
+      },
+      "optimization_direction": [
+        "Reduce baseline overhead (use &str instead of String, optimize locks)",
+        "Promote batch API (users should use put_batch())",
+        "Long-running instances (amortize initialization cost)"
+      ]
+    },
+    
+    "code_quality": {
+      "highlights": [
+        "Strict config validation (200+ lines)",
+        "Fine-grained error handling with recovery suggestions",
+        "Complete statistics for observability"
+      ],
+      "documentation": {
+        "design_doc": "KV_FILE_DESIGN.md (200+ lines)",
+        "benchmark_report": "BENCHMARK_REPORT.md (9 suites, 25 tests)",
+        "optimization_log": "PERFORMANCE_OPTIMIZATION_REPORT.md"
+      }
+    }
+  },
+
+  "optimization_plan": {
+    "p0_critical": [
+      {
+        "id": "P0-01",
+        "title": "Replace SHA256 with xxHash",
+        "problem": "SHA256 is a cryptographic hash (~10µs), overkill for KV indexing",
+        "current_code": "let mut hasher = Sha256::new(); hasher.update(value);",
+        "solution": {
+          "dependency": "xxhash-rust = \"0.8\"",
+          "code_change": "use xxhash_rust::xxh3::xxh3_64; let hash = xxh3_64(value);",
+          "expected_improvement": "~10µs → ~1µs per hash operation"
+        },
+        "estimated_impact": "Baseline ~45µs → ~35µs (10µs saved per write)"
+      },
+      {
+        "id": "P0-02",
+        "title": "Fix Bloom Filter Short-Circuit",
+        "problem": "Bloom Filter negative result does not short-circuit the read path",
+        "current_code": "if !bloom.might_contain(key) { /* should return here */ } // but continues to check MemTable, Cache, Segment...",
+        "solution": {
+          "code_change": "if !bloom.might_contain(key) { self.stats.write().bloom_filtered += 1; return Ok(None); }",
+          "location": "file_kv.rs:get() method, early return path"
+        },
+        "estimated_impact": "Negative lookup ~66µs → ~1µs (66x improvement)"
+      }
+    ],
+    
+    "p1_high": [
+      {
+        "id": "P1-01",
+        "title": "BlockCache with DashMap + Arc",
+        "problem": "Cache uses Mutex + clone, adding ~10µs overhead",
+        "current_code": "let mut cache = self.data.lock(); cache.get(&hash).cloned();",
+        "solution": {
+          "data_structure": "use dashmap::DashMap<u64, Arc<[u8]>>",
+          "code_change": "self.data.get(&hash).map(|e| Arc::clone(&e.value()))",
+          "benefit": "Lock-free + zero-copy"
+        },
+        "estimated_impact": "Hot read ~47µs → ~5µs (10x improvement)"
+      },
+      {
+        "id": "P1-02",
+        "title": "Promote put_batch() API",
+        "problem": "Users use single put() which has 170x higher per-item cost",
+        "solution": {
+          "api_design": "pub fn put_batch(&self, entries: &[(&str, &[u8])]) -> Result<usize>",
+          "documentation": "Add examples showing batch usage",
+          "facade_integration": "Context::store_batch() wrapper in facade.rs"
+        },
+        "estimated_impact": "User workloads see 10-100x throughput improvement"
+      }
+    ],
+    
+    "p2_medium": [
+      {
+        "id": "P2-01",
+        "title": "Split file_kv.rs into Modules",
+        "problem": "2050 lines in single file reduces maintainability",
+        "proposed_structure": {
+          "file_kv/mod.rs": "Main FileKV struct and public API",
+          "file_kv/memtable.rs": "MemTable implementation",
+          "file_kv/segment.rs": "SegmentFile implementation",
+          "file_kv/wal.rs": "WAL integration",
+          "file_kv/cache.rs": "BlockCache implementation",
+          "file_kv/bloom.rs": "Bloom Filter integration",
+          "file_kv/compaction.rs": "CompactionManager integration"
+        },
+        "estimated_effort": "4-6 hours",
+        "status": "✅ Completed",
+        "completed_date": "2026-04-02",
+        "actual_structure": {
+          "file_kv/mod.rs": "889 lines - Main FileKV struct and public API",
+          "file_kv/types.rs": "347 lines - ValuePointer, Config, Stats types",
+          "file_kv/segment.rs": "375 lines - SegmentFile implementation",
+          "file_kv/memtable.rs": "217 lines - MemTable implementation",
+          "file_kv/flush.rs": "120 lines - Background flush thread and trigger",
+          "file_kv/wal.rs": "82 lines - WAL integration helpers",
+          "file_kv/bloom.rs": "5 lines - Bloom filter re-exports",
+          "file_kv/compaction.rs": "6 lines - Compaction wrapper"
+        },
+        "actual_result": "2041 lines across 8 files (avg 255 lines/file), 29% reduction in mod.rs"
+      },
+      {
+        "id": "P2-02",
+        "title": "Use Bytes Type for Values",
+        "problem": "Vec<u8> clone is expensive",
+        "solution": {
+          "dependency": "bytes = \"1.5\"",
+          "api_change": "pub fn put(&self, key: &str, value: &Bytes) -> Result<()>",
+          "benefit": "Bytes uses Arc internally, clone is zero-copy"
+        },
+        "estimated_impact": "Value clone ~5µs → ~0µs"
+      },
+      {
+        "id": "P2-03",
+        "title": "Pre-allocate Segment Files",
+        "problem": "File system fragmentation from growing files",
+        "solution": {
+          "code_change": "file.set_len(preallocated_size) when creating segment",
+          "config_option": "segment_preallocate_size: Option<u64> in FileKVConfig"
+        },
+        "estimated_impact": "Sequential write throughput +10-20%"
+      }
+    ],
+    
+    "p3_future": [
+      {
+        "id": "P3-01",
+        "title": "Background Flush Thread Tuning",
+        "description": "Current implementation exists but needs tuning",
+        "tuning_parameters": [
+          "flush_interval_ms: configurable (default 100ms)",
+          "flush_threshold_bytes: adaptive based on write rate",
+          "graceful shutdown on drop"
+        ]
+      },
+      {
+        "id": "P3-02",
+        "title": "io_uring Integration (Linux only)",
+        "description": "Async I/O for reduced syscall overhead",
+        "dependencies": ["tokio-uring", "iou"],
+        "estimated_impact": "I/O latency -30-50%",
+        "complexity": "High, requires significant refactoring"
+      },
+      {
+        "id": "P3-03",
+        "title": "Zero-Copy Read with mmap",
+        "description": "Return &[u8] from mmap instead of Vec<u8>",
+        "benefit": "Eliminates kernel-to-user space copy",
+        "estimated_impact": "Large value read +2-3x"
+      }
+    ]
+  },
+
+  "implementation_timeline": {
+    "week_1": {
+      "tasks": ["P0-01: Replace SHA256 with xxHash", "P0-02: Fix Bloom Filter short-circuit"],
+      "expected_outcome": "Baseline ~45µs → ~25µs",
+      "effort": "1-2 days"
+    },
+    "week_2": {
+      "tasks": ["P1-01: BlockCache with DashMap + Arc", "P1-02: Promote put_batch() API"],
+      "expected_outcome": "Hot read ~47µs → ~5µs, batch adoption +50%",
+      "effort": "2-3 days"
+    },
+    "week_3": {
+      "tasks": ["P2-01: Split file_kv.rs", "P2-02: Use Bytes type"],
+      "expected_outcome": "Code maintainability +50%, value clone eliminated",
+      "effort": "1 week"
+    },
+    "week_4": {
+      "tasks": ["Run full benchmark suite", "Write optimization report", "Update documentation"],
+      "expected_outcome": "Complete optimization cycle with measured results",
+      "effort": "3-4 days"
+    }
+  },
+
+  "success_metrics": {
+    "performance_targets": {
+      "single_write": {
+        "current": "~45µs",
+        "target": "~15-20µs",
+        "improvement": "3x"
+      },
+      "batch_write_per_item": {
+        "current": "0.26µs/item (1000 items)",
+        "target": "maintain or improve",
+        "improvement": "N/A"
+      },
+      "hot_read": {
+        "current": "~47µs",
+        "target": "~3-5µs",
+        "improvement": "10x"
+      },
+      "bloom_filter_negative": {
+        "current": "~66µs",
+        "target": "~1µs",
+        "improvement": "66x"
+      }
+    },
+    "code_quality_targets": {
+      "file_kv_lines": {
+        "current": "2050 lines (single file)",
+        "target": "400-500 lines per module (7 modules)",
+        "improvement": "Maintainability +50%"
+      },
+      "test_coverage": {
+        "current": "11 tests",
+        "target": "20+ tests including integration tests",
+        "improvement": "Coverage +80%"
+      }
+    }
+  },
+
+  "risk_assessment": {
+    "technical_risks": [
+      {
+        "risk": "xxHash collision rate higher than SHA256",
+        "mitigation": "xxHash has excellent distribution; add collision detection in tests",
+        "probability": "Low",
+        "impact": "Medium"
+      },
+      {
+        "risk": "DashMap memory overhead higher than Mutex<BTreeMap>",
+        "mitigation": "Benchmark memory usage; fallback to RwLock if needed",
+        "probability": "Low",
+        "impact": "Low"
+      },
+      {
+        "risk": "Refactoring file_kv.rs introduces bugs",
+        "mitigation": "Run full test suite after each module split; use git blame for tracking",
+        "probability": "Medium",
+        "impact": "Medium"
+      }
+    ],
+    "schedule_risks": [
+      {
+        "risk": "Optimization takes longer than expected",
+        "mitigation": "Prioritize P0/P1; defer P2/P3 to future sprints",
+        "probability": "Medium",
+        "impact": "Low"
+      }
+    ]
+  },
+
+  "appendix": {
+    "benchmark_configuration": {
+      "filekv_config": {
+        "memtable_flush_threshold_bytes": "4MB",
+        "memtable_max_entries": "100000",
+        "block_cache_max_items": "10000",
+        "block_cache_max_memory_bytes": "64MB",
+        "enable_bloom": "true",
+        "enable_wal": "false (for benchmarks)",
+        "auto_compact": "false (for benchmarks)"
+      },
+      "test_environment": {
+        "os": "Linux",
+        "rust_version": "Stable (latest)",
+        "build_profile": "Release with optimizations",
+        "benchmark_tool": "Criterion.rs v0.5"
+      }
+    },
+    
+    "references": {
+      "design_doc": "doc/KV_FILE_DESIGN.md",
+      "benchmark_report": "doc/BENCHMARK_REPORT.md",
+      "optimization_log": "doc/PERFORMANCE_OPTIMIZATION_REPORT.md",
+      "lsm_tree_paper": "O'Neil et al. - The Log-Structured Merge-Tree (1996)",
+      "rocksdb_docs": "https://github.com/facebook/rocksdb/wiki"
+    }
+  }
+}
