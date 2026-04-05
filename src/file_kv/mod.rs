@@ -13,26 +13,37 @@
 
 pub mod adaptive_preallocator;
 pub mod async_io;
-pub mod bloom;
 pub mod bloom_filter_cache;
 pub mod bloom_migration;
 pub mod cache_warmer;
+pub mod checkpoints;
 pub mod compaction;
 pub mod flush;
 pub mod incremental_checkpoint;
+pub mod incremental_types;
+pub mod incremental_manager;
 pub mod memtable;
+pub mod recovery;
 pub mod segment;
 pub mod timeout_control;
 pub mod types;
 pub mod wal;
 pub mod write_coalescer;
 
+// Internal bloom operations (not public API)
+pub(crate) mod bloom;
+
+// Incremental checkpoint tests (only in test builds)
+#[cfg(test)]
+mod incremental_tests;
+
 pub use adaptive_preallocator::{AdaptivePreallocator, AdaptivePreallocatorConfig, PreallocatorStats, SharedAdaptivePreallocator};
 pub use async_io::{AsyncIoConfig, AsyncIoStats, AsyncWriter, AsyncWriteOp, AsyncWriteResult};
-pub use incremental_checkpoint::{
+pub use incremental_types::{
     CheckpointEntry, CheckpointId, CheckpointSeq, CheckpointStats, CheckpointType,
-    IncrementalCheckpoint, IncrementalCheckpointManager, CheckpointChain, CheckpointMetadata,
+    IncrementalCheckpoint, CheckpointChain, CheckpointMetadata,
 };
+pub use incremental_manager::IncrementalCheckpointManager;
 pub use bloom_filter_cache::{BloomFilterCache, BloomFilterCacheConfig, BloomFilterCacheStats};
 pub use cache_warmer::{CacheWarmer, CacheWarmingConfig, CacheWarmingStats, WarmingStrategy};
 pub use memtable::{MemTable, MemTableConfig, MemTableEntry};
@@ -40,7 +51,7 @@ pub use write_coalescer::{WriteCoalescer, WriteCoalescerConfig};
 pub use segment::{SegmentFile, SegmentStats};
 pub use types::{FileKVConfig, FileKVConfigError, FileKVConfigValidation, FileKVStats, FileKVStatsSnapshot, ValuePointer};
 pub use crate::audit_log::{AuditLogConfig, AuditLogger, AuditEntry, AuditOperation, AuditMetadata, AuditLogStats};
-pub use crate::dictionary_compression::{DictionaryCompressor, DictionaryCompressionConfig, DictionaryStats};
+pub use crate::optimization::compression::dictionary::{DictionaryCompressor, DictionaryCompressionConfig, DictionaryStats};
 
 use std::collections::{BTreeMap, HashSet, HashMap};
 use std::fs::File;
@@ -59,7 +70,7 @@ use crate::sparse_index::{SparseIndex, IndexManager, SparseIndexConfig};
 use crate::block_cache::{BlockCache, BlockCacheConfig};
 use crate::wal::WalManager;
 use crate::compaction::CompactionManager;
-use bloom::{BloomFilter, ASMS};
+use ::bloom::{BloomFilter, ASMS};
 use flush::FlushTrigger;
 use types::{BLOOM_MAGIC, BLOOM_VERSION};
 
@@ -114,7 +125,7 @@ pub struct FileKV {
     /// P2-008: Adaptive segment pre-allocation
     adaptive_preallocator: Option<SharedAdaptivePreallocator>,
     /// P2-014: Dictionary compressor for better compression ratios
-    compressor: Option<parking_lot::Mutex<crate::dictionary_compression::DictionaryCompressor>>,
+    compressor: Option<parking_lot::Mutex<crate::optimization::compression::dictionary::DictionaryCompressor>>,
     /// P3-001: Async I/O writer for non-blocking writes
     async_writer: Option<Arc<AsyncWriter>>,
     /// P1-015: Timeout control for operations
@@ -226,7 +237,7 @@ impl FileKV {
 
         // P2-014: Initialize dictionary compressor if enabled
         let compressor = if config.compression.enable_dictionary {
-            use crate::dictionary_compression::DictionaryCompressor;
+            use crate::optimization::compression::dictionary::DictionaryCompressor;
             Some(parking_lot::Mutex::new(DictionaryCompressor::new(config.compression.clone())))
         } else {
             None
@@ -380,188 +391,7 @@ impl FileKV {
         }
     }
 
-    // ==================== P2-009: Incremental Checkpoint API ====================
-
-    /// P2-009: Create a full checkpoint from current state
-    ///
-    /// This creates a complete snapshot of all key-value pairs in the store.
-    /// Full checkpoints serve as the base for incremental checkpoints.
-    ///
-    /// # Arguments
-    /// * `description` - Optional description for this checkpoint
-    ///
-    /// # Returns
-    /// * `Ok(CheckpointId)` - The ID of the created checkpoint
-    /// * `Err(ContextError)` - On checkpoint creation failure
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let kv = FileKV::open(config)?;
-    /// let checkpoint_id = kv.create_full_checkpoint(Some("Initial backup"))?;
-    /// ```
-    pub fn create_full_checkpoint(&self, description: Option<&str>) -> ContextResult<String> {
-        // Collect all data from MemTable and segments
-        let mut state: HashMap<String, Vec<u8>> = HashMap::new();
-
-        // Get data from MemTable using DashMap iteration
-        // Use keys() to get an iterator of (key, value) pairs
-        for ref_multi in self.memtable.iter() {
-            let key: String = ref_multi.key().clone();
-            let entry = ref_multi.value();
-            
-            if let Some(ref mem_entry) = entry.value {
-                if !entry.deleted {
-                    state.insert(key, mem_entry.as_ref().to_vec());
-                }
-            }
-        }
-
-        // Get data from all segments (latest values override earlier ones)
-        let segments = self.segments.read();
-        for _segment in segments.values() {
-            // Read all entries from segment
-            // This is a simplified approach - in production you'd want to iterate efficiently
-            // TODO: Implement segment iteration to load all key-value pairs
-        }
-
-        let mut manager = self.checkpoint_manager.lock();
-        manager.create_full_checkpoint(&state, description)
-            .map_err(|e| ContextError::OperationFailed(format!("Checkpoint creation failed: {}", e)))
-    }
-
-    /// P2-009: Create an incremental checkpoint with the given changes
-    ///
-    /// Incremental checkpoints only store changes (deltas) since the last checkpoint,
-    /// making them much faster and smaller than full checkpoints.
-    ///
-    /// # Arguments
-    /// * `changes` - List of changes (PUT/DELETE/MODIFY operations)
-    /// * `description` - Optional description for this checkpoint
-    ///
-    /// # Returns
-    /// * `Ok(CheckpointId)` - The ID of the created checkpoint
-    /// * `Err(ContextError)` - On checkpoint creation failure
-    pub fn create_incremental_checkpoint(
-        &self,
-        changes: Vec<CheckpointEntry>,
-        description: Option<&str>,
-    ) -> ContextResult<String> {
-        let mut manager = self.checkpoint_manager.lock();
-        manager.create_incremental_checkpoint(changes, description)
-            .map_err(|e| ContextError::OperationFailed(format!("Checkpoint creation failed: {}", e)))
-    }
-
-    /// P2-009: Compute the diff between two states for incremental checkpoint
-    ///
-    /// This utility function compares old and new state and returns the list of
-    /// changes (PUT for new keys, DELETE for removed keys, MODIFY for changed values).
-    ///
-    /// # Arguments
-    /// * `old_state` - Previous state
-    /// * `new_state` - Current state
-    ///
-    /// # Returns
-    /// * `Vec<CheckpointEntry>` - List of changes to apply
-    pub fn compute_diff(
-        old_state: &HashMap<String, Vec<u8>>,
-        new_state: &HashMap<String, Vec<u8>>,
-    ) -> Vec<CheckpointEntry> {
-        IncrementalCheckpointManager::compute_diff(old_state, new_state)
-    }
-
-    /// P2-009: Restore state from a checkpoint
-    ///
-    /// Restores the key-value store to the state captured by the specified checkpoint.
-    /// For incremental checkpoints, this will replay the chain from the base full checkpoint.
-    ///
-    /// # Arguments
-    /// * `checkpoint_id` - The ID of the checkpoint to restore from
-    ///
-    /// # Returns
-    /// * `Ok(HashMap<String, Vec<u8>>)` - The restored state
-    /// * `Err(ContextError)` - On restoration failure
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let state = kv.restore_from_checkpoint(&checkpoint_id)?;
-    /// // Now you can use the restored state
-    /// ```
-    pub fn restore_from_checkpoint(&self, checkpoint_id: &str) -> ContextResult<HashMap<String, Vec<u8>>> {
-        let manager = self.checkpoint_manager.lock();
-        let checkpoint_id_str = checkpoint_id.to_string();
-        manager.restore(&checkpoint_id_str)
-            .map_err(|e| ContextError::OperationFailed(format!("Checkpoint restore failed: {}", e)))
-    }
-
-    /// P2-009: Get the latest checkpoint
-    ///
-    /// # Returns
-    /// * `Option<IncrementalCheckpoint>` - The latest checkpoint, if any exists
-    pub fn get_latest_checkpoint(&self) -> Option<IncrementalCheckpoint> {
-        let manager = self.checkpoint_manager.lock();
-        manager.get_latest().cloned()
-    }
-
-    /// P2-009: Get a checkpoint by ID
-    ///
-    /// # Arguments
-    /// * `checkpoint_id` - The ID of the checkpoint to retrieve
-    ///
-    /// # Returns
-    /// * `Option<IncrementalCheckpoint>` - The checkpoint, if found
-    pub fn get_checkpoint(&self, checkpoint_id: &str) -> Option<IncrementalCheckpoint> {
-        let manager = self.checkpoint_manager.lock();
-        manager.get_checkpoint(checkpoint_id).cloned()
-    }
-
-    /// P2-009: List all checkpoints
-    ///
-    /// # Returns
-    /// * `Vec<IncrementalCheckpoint>` - All checkpoints sorted by sequence
-    pub fn list_checkpoints(&self) -> Vec<IncrementalCheckpoint> {
-        let manager = self.checkpoint_manager.lock();
-        manager.list_checkpoints().into_iter().cloned().collect()
-    }
-
-    /// P2-009: Get checkpoint statistics
-    ///
-    /// # Returns
-    /// * `CheckpointStats` - Statistics about checkpoints
-    pub fn get_checkpoint_stats(&self) -> CheckpointStats {
-        let manager = self.checkpoint_manager.lock();
-        manager.get_stats()
-    }
-
-    /// P2-009: Compact old checkpoints to save space
-    ///
-    /// Deletes old checkpoints while preserving at least `keep_last_n` checkpoints
-    /// and ensuring at least one full checkpoint remains.
-    ///
-    /// # Arguments
-    /// * `keep_last_n` - Minimum number of checkpoints to keep
-    ///
-    /// # Returns
-    /// * `Ok(usize)` - Number of checkpoints deleted
-    /// * `Err(ContextError)` - On compaction failure
-    pub fn compact_checkpoints(&self, keep_last_n: usize) -> ContextResult<usize> {
-        let mut manager = self.checkpoint_manager.lock();
-        manager.compact(keep_last_n)
-            .map_err(|e| ContextError::OperationFailed(format!("Checkpoint compaction failed: {}", e)))
-    }
-
-    /// P2-009: Set the full checkpoint interval
-    ///
-    /// Configures how often a full checkpoint is created instead of incremental.
-    ///
-    /// # Arguments
-    /// * `interval` - Create full checkpoint every N incremental checkpoints
-    pub fn set_checkpoint_interval(&self, interval: u64) {
-        let mut manager = self.checkpoint_manager.lock();
-        manager.set_full_checkpoint_interval(interval);
-    }
-
-    // ==================== End P2-009 ====================
-
+    // Checkpoint methods moved to checkpoints.rs
 
     /// 写入键值对
     ///
@@ -1462,7 +1292,7 @@ impl FileKV {
         use bloom_migration::BloomFilterMigrator;
 
         let migrator = BloomFilterMigrator::new(self.config.index_dir.clone());
-        
+
         match migrator.load_with_migration(segment_id) {
             Ok(Some((bloom, keys, migration_result))) => {
                 match migration_result {
@@ -1496,393 +1326,9 @@ impl FileKV {
         }
     }
 
-    /// Rebuild bloom filters for all segments with validation and atomic writes
-    ///
-    /// P0-008 FIX:
-    /// - Validates segment integrity before rebuilding (checksum verification)
-    /// - Uses atomic rename (temp file → final file) to prevent corruption
-    /// - Preserves old filter as backup during rebuild
-    /// - Only rebuilds if segment passes validation
-    ///
-    /// P2-011: Updated to use bloom_filter_cache with on-demand loading
-    pub fn rebuild_bloom_filters(&self) -> ContextResult<usize> {
-        let segments = self.segments();
-        let mut rebuilt_count = 0;
-        let mut loaded_count = 0;
-        let mut skipped_count = 0;
-
-        for seg_stats in &segments {
-            let seg_id = seg_stats.id;
-
-            // Try to load existing bloom filter first
-            match self.load_bloom_filter(seg_id) {
-                Ok(Some((bloom, _keys))) => {
-                    // Existing filter is valid, insert into cache
-                    self.bloom_filter_cache.insert(seg_id, bloom);
-                    loaded_count += 1;
-                    continue;
-                }
-                Ok(None) => {
-                    // No existing filter, need to rebuild
-                }
-                Err(e) => {
-                    // Filter file corrupted - log warning but continue to rebuild
-                    tracing::warn!("Bloom filter file for segment {} corrupted: {}. Will rebuild.", seg_id, e);
-                }
-            }
-
-            trace_info(|| format!("Rebuilding bloom filter for segment {}", seg_id));
-
-            // P0-008 FIX: Validate segment integrity before rebuilding
-            let segments_map = self.segments.read();
-            if let Some(segment) = segments_map.get(&seg_id) {
-                // Verify segment file is readable and has valid checksums
-                if let Err(e) = self.validate_segment_integrity(segment) {
-                    tracing::error!("Segment {} failed integrity check, skipping bloom rebuild: {}", seg_id, e);
-                    skipped_count += 1;
-                    continue;
-                }
-
-                // Rebuild bloom filter from validated segment data
-                let mut bloom = BloomFilter::with_rate(0.01, 10000);
-                let mut keys = Vec::new();
-
-                segment.iterate_entries(|key, _value, _deleted| {
-                    bloom.insert(&key);
-                    keys.push(key.to_string());
-                    Ok(())
-                })?;
-
-                // P0-008 FIX: Use atomic save (write to temp, then rename)
-                if let Err(e) = self.save_bloom_filter_atomic(seg_id, &bloom, &keys) {
-                    tracing::error!("Failed to save bloom filter for segment {}: {}", seg_id, e);
-                    skipped_count += 1;
-                    continue;
-                }
-
-                // Insert into cache
-                self.bloom_filter_cache.insert(seg_id, bloom);
-                rebuilt_count += 1;
-            } else {
-                tracing::warn!("Segment {} not found in segments map", seg_id);
-                skipped_count += 1;
-            }
-        }
-
-        trace_info(|| format!(
-            "Bloom filter rebuild complete: loaded={}, rebuilt={}, skipped={}",
-            loaded_count, rebuilt_count, skipped_count
-        ));
-        Ok(rebuilt_count)
-    }
-
-    /// Validate segment file integrity by checking magic bytes and sampling checksums
-    fn validate_segment_integrity(&self, segment: &SegmentFile) -> ContextResult<()> {
-        use std::fs::File;
-        use std::io::Read;
-
-        // P0-008 FIX: Segment magic and version constants (from segment.rs)
-        const SEGMENT_MAGIC: u32 = 0x54435347; // "TCSG" = Tokitai Context SeGment
-        const SEGMENT_VERSION: u32 = 1;
-
-        // Open segment file for validation
-        let mut file = File::open(&segment.path)
-            .map_err(ContextError::Io)?;
-
-        // Verify magic bytes and version
-        let mut header = [0u8; 8];
-        file.read_exact(&mut header)
-            .map_err(ContextError::Io)?;
-
-        let magic = u32::from_le_bytes(header[0..4].try_into().map_err(|e| ContextError::OperationFailed(format!("Invalid magic bytes: {}", e)))?);
-        if magic != SEGMENT_MAGIC {
-            return Err(ContextError::OperationFailed(format!("Invalid segment magic: expected {:08X}, got {:08X}",
-                         SEGMENT_MAGIC, magic)));
-        }
-
-        let version = u32::from_le_bytes(header[4..8].try_into().map_err(|e| ContextError::OperationFailed(format!("Invalid version bytes: {}", e)))?);
-        if version != SEGMENT_VERSION {
-            return Err(ContextError::OperationFailed(format!("Unsupported segment version: expected {}, got {}",
-                         SEGMENT_VERSION, version)));
-        }
-
-        // P0-008 FIX: Sample checksum verification on first few entries
-        // This catches corrupted files without scanning the entire segment
-        let mut verified_entries = 0;
-        let max_verify_entries = 3; // Verify first 3 entries as sample
-
-        // Reset file position to read entries
-        drop(file);
-        let mut file = File::open(&segment.path)?;
-        file.seek(std::io::SeekFrom::Start(8))?; // Skip header
-
-        while verified_entries < max_verify_entries {
-            // Try to read entry header (key_len)
-            let mut len_buf = [0u8; 4];
-            match file.read_exact(&mut len_buf) {
-                Ok(_) => {
-                    let key_len = u32::from_le_bytes(len_buf) as usize;
-                    
-                    // Skip key bytes
-                    file.seek(std::io::SeekFrom::Current(key_len as i64))?;
-                    
-                    // Read value length
-                    file.read_exact(&mut len_buf)?;
-                    let value_len = u32::from_le_bytes(len_buf) as usize;
-                    
-                    // Skip value bytes
-                    file.seek(std::io::SeekFrom::Current(value_len as i64))?;
-                    
-                    // Read and verify checksum
-                    let mut checksum_buf = [0u8; 4];
-                    file.read_exact(&mut checksum_buf)?;
-                    let stored_checksum = u32::from_le_bytes(checksum_buf);
-                    
-                    if stored_checksum == 0 {
-                        return Err(ContextError::OperationFailed(format!("Entry {} has invalid checksum (0)", verified_entries)));
-                    }
-
-                    verified_entries += 1;
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    // End of file reached - no more entries
-                    break;
-                }
-                Err(e) => {
-                    return Err(ContextError::Io(e));
-                }
-            }
-        }
-
-        if verified_entries == 0 {
-            tracing::warn!("Segment {} has no entries to verify", segment.id);
-        }
-
-        Ok(())
-    }
-
-    /// Save bloom filter atomically using temp file + rename
-    ///
-    /// P0-008 FIX: Prevents corruption from crashes during write
-    /// - Writes to temporary file first
-    /// - Flushes and syncs to disk
-    /// - Atomically renames to final location
-    fn save_bloom_filter_atomic(&self, segment_id: u64, _bloom: &BloomFilter, keys: &[String]) -> ContextResult<()> {
-        use std::fs;
-
-        let bloom_path = self.config.index_dir.join(format!("bloom_{:06}.bin", segment_id));
-        let temp_path = self.config.index_dir.join(format!("bloom_{:06}.tmp", segment_id));
-
-        // P0-008 FIX: Write to temporary file first
-        let mut file = BufWriter::new(
-            File::create(&temp_path)
-                .map_err(ContextError::Io)?
-        );
-
-        // Write header
-        file.write_all(&BLOOM_MAGIC.to_le_bytes())?;
-        file.write_all(&BLOOM_VERSION.to_le_bytes())?;
-
-        // Write keys
-        let num_keys = keys.len() as u64;
-        file.write_all(&num_keys.to_le_bytes())?;
-
-        for key in keys {
-            let key_bytes = key.as_bytes();
-            let key_len = key_bytes.len() as u32;
-            file.write_all(&key_len.to_le_bytes())?;
-            file.write_all(key_bytes)?;
-        }
-
-        // P0-008 FIX: Flush and sync before rename
-        file.flush()?;
-        file.get_ref().sync_all()
-            .map_err(ContextError::Io)?;
-        drop(file); // Close file handle before rename
-
-        // P0-008 FIX: Atomic rename (filesystem-level atomic operation)
-        fs::rename(&temp_path, &bloom_path)
-            .map_err(ContextError::Io)?;
-
-        // Sync directory to ensure rename is persisted
-        if let Ok(dir) = File::open(&self.config.index_dir) {
-            let _ = dir.sync_all();
-        }
-
-        trace_debug(|| format!("Atomically saved bloom filter with {} keys for segment {} to {:?}", 
-                             num_keys, segment_id, bloom_path));
-        Ok(())
-    }
-
-    #[tracing::instrument(skip_all)]
-    pub fn recover(&self) -> ContextResult<usize> {
-        use crate::wal::WalOperation;
-        use base64::{Engine, engine::general_purpose::STANDARD};
-
-        if let Some(ref wal) = self.wal {
-            let mut wal_guard = wal.lock();
-            let entries = wal_guard.read_entries()?;
-            let count = entries.len();
-
-            if count == 0 {
-                return Ok(0);
-            }
-
-            trace_info(|| format!("Replaying {} WAL entries for recovery", count));
-
-            // P1-005 FIX: Actually replay WAL entries to restore data
-            for entry in &entries {
-                match &entry.operation {
-                    WalOperation::Add { session: key, hash: _, layer: _ } => {
-                        if let Some(payload) = &entry.payload {
-                            // Parse payload: "{len}:{hash}:{base64_value}"
-                            let parts: Vec<&str> = payload.split(':').collect();
-                            if parts.len() >= 3 {
-                                if let Ok(len) = parts[0].parse::<usize>() {
-                                    // Decode base64 value
-                                    if let Ok(value_bytes) = STANDARD.decode(parts[2]) {
-                                        if value_bytes.len() == len {
-                                            // Replay: insert into memtable
-                                            let _ = self.memtable.insert(key.clone(), &value_bytes);
-                                            trace_info(|| format!("Replayed Add for key: {}", key));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    WalOperation::Delete { session: key, .. } => {
-                        // Replay: mark as deleted in memtable
-                        let _ = self.memtable.delete(key);
-                        trace_info(|| format!("Replayed Delete for key: {}", key));
-                    }
-                    _ => {
-                        // Other operations (compaction, merge) don't need replay
-                    }
-                }
-            }
-
-            wal_guard.clear()?;
-            trace_info(|| format!("Recovery completed, replayed {} entries", count));
-            Ok(count)
-        } else {
-            Ok(0)
-        }
-    }
+    // Bloom filter methods moved to bloom.rs
+    // Recovery method moved to recovery.rs
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    #[test]
-    fn test_filekv_open() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = FileKVConfig {
-            segment_dir: temp_dir.path().join("segments"),
-            wal_dir: temp_dir.path().join("wal"),
-            index_dir: temp_dir.path().join("index"),
-            enable_wal: true,
-            ..Default::default()
-        };
-
-        let kv = FileKV::open(config).unwrap();
-        let stats = kv.stats();
-        assert_eq!(stats.segment_count, 0);
-    }
-
-    #[test]
-    fn test_filekv_put_get() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = FileKVConfig {
-            segment_dir: temp_dir.path().join("segments"),
-            wal_dir: temp_dir.path().join("wal"),
-            enable_wal: false,
-            write_coalescing_enabled: false, // Disable for testing
-            ..Default::default()
-        };
-
-        let kv = FileKV::open(config).unwrap();
-
-        kv.put("key1", b"value1").unwrap();
-        kv.put("key2", b"value2").unwrap();
-
-        let val1 = kv.get("key1").unwrap();
-        assert_eq!(val1, Some(b"value1".to_vec()));
-
-        let val2 = kv.get("key2").unwrap();
-        assert_eq!(val2, Some(b"value2".to_vec()));
-
-        let val3 = kv.get("key3").unwrap();
-        assert_eq!(val3, None);
-    }
-
-    #[test]
-    fn test_filekv_delete() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = FileKVConfig {
-            segment_dir: temp_dir.path().join("segments"),
-            wal_dir: temp_dir.path().join("wal"),
-            enable_wal: false,
-            write_coalescing_enabled: false, // Disable for testing
-            ..Default::default()
-        };
-
-        let kv = FileKV::open(config).unwrap();
-
-        kv.put("key1", b"value1").unwrap();
-        kv.delete("key1").unwrap();
-
-        let val = kv.get("key1").unwrap();
-        assert_eq!(val, None);
-    }
-
-    #[test]
-    fn test_filekv_stats() {
-        let _temp_dir = TempDir::new().unwrap();
-        let config = FileKVConfig {
-            write_coalescing_enabled: false, // Disable for testing
-            ..Default::default()
-        };
-        let kv = FileKV::open(config).unwrap();
-
-        let stats = kv.stats();
-        assert_eq!(stats.write_count, 0);
-        assert_eq!(stats.read_count, 0);
-
-        kv.put("key1", b"value1").unwrap();
-        kv.put("key2", b"value2").unwrap();
-
-        let stats = kv.stats();
-        assert_eq!(stats.write_count, 2);
-        assert!(stats.memtable_size > 0);
-        assert_eq!(stats.memtable_entries, 2);
-    }
-
-    #[test]
-    fn test_filekv_put_batch() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = FileKVConfig {
-            segment_dir: temp_dir.path().join("segments"),
-            wal_dir: temp_dir.path().join("wal"),
-            enable_wal: false,
-            ..Default::default()
-        };
-
-        let kv = FileKV::open(config).unwrap();
-
-        let entries: Vec<(&str, &[u8])> = vec![
-            ("key1", b"value1"),
-            ("key2", b"value2"),
-            ("key3", b"value3"),
-        ];
-
-        let count = kv.put_batch(&entries).unwrap();
-        assert_eq!(count, 3);
-
-        assert_eq!(kv.get("key1").unwrap(), Some(b"value1".to_vec()));
-        assert_eq!(kv.get("key2").unwrap(), Some(b"value2".to_vec()));
-        assert_eq!(kv.get("key3").unwrap(), Some(b"value3".to_vec()));
-    }
-}
+mod tests;

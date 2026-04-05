@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use super::branch::ContextBranch;
 use super::merge::{MergeResult, Merger};
 use super::graph::{Conflict, ConflictType, ConflictVersion};
-use super::hirschberg_lcs::HirschbergLCS;
+use crate::optimization::algorithms::lcs::HirschbergLCS;
 
 /// diff3 合并标记
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,17 +124,11 @@ impl AdvancedMerger {
         let source_lines: Vec<&str> = source_content.lines().collect();
         let target_lines: Vec<&str> = target_content.lines().collect();
 
-        // 计算 LCS
-        let lcs_source = Self::compute_lcs(&base_lines, &source_lines);
-        let lcs_target = Self::compute_lcs(&base_lines, &target_lines);
-
-        // 生成 hunks
+        // 生成 hunks（内部会计算 LCS）
         let hunks = self.generate_diff3_hunks(
             &base_lines,
             &source_lines,
             &target_lines,
-            &lcs_source,
-            &lcs_target,
         );
 
         // 合并 hunks
@@ -149,117 +143,139 @@ impl AdvancedMerger {
     }
 
     /// 计算最长公共子序列（使用 Hirschberg 算法优化空间复杂度）
-    fn compute_lcs<T: PartialEq + Clone>(a: &[T], b: &[T]) -> Vec<usize> {
+    /// 返回 (base_idx, other_idx) 对
+    pub fn compute_lcs_pairs<T: PartialEq + Clone>(a: &[T], b: &[T]) -> Vec<(usize, usize)> {
         // 使用 Hirschberg 算法，空间复杂度从 O(m*n) 优化到 O(min(m,n))
-        let lcs_pairs = HirschbergLCS::compute_lcs(a, b);
-        
-        // 提取 A 的索引（因为我们只需要 A 的 LCS 位置）
-        lcs_pairs.into_iter().map(|(ai, _)| ai).collect()
+        HirschbergLCS::compute_lcs(a, b)
     }
 
-    /// 生成 diff3 hunks
+    /// 生成 diff3 hunks - 使用标准 diff3 算法
     fn generate_diff3_hunks(
         &self,
         base: &[&str],
         source: &[&str],
         target: &[&str],
-        lcs_source: &[usize],
-        lcs_target: &[usize],
     ) -> Vec<Diff3Hunk> {
+        // 计算完整的 LCS 对
+        let lcs_source_pairs = Self::compute_lcs_pairs(base, source);
+        let lcs_target_pairs = Self::compute_lcs_pairs(base, target);
+        
         let mut hunks = Vec::new();
-        let mut base_idx = 0;
-        let mut source_idx = 0;
-        let mut target_idx = 0;
+        let mut prev_base = 0;
+        let mut prev_source = 0;
+        let mut prev_target = 0;
 
-        let lcs_source_set: HashSet<usize> = lcs_source.iter().cloned().collect();
-        let lcs_target_set: HashSet<usize> = lcs_target.iter().cloned().collect();
+        // 使用双指针找到共同的锚点
+        let mut si = 0;
+        let mut ti = 0;
 
-        while base_idx < base.len() || source_idx < source.len() || target_idx < target.len() {
-            // 检查是否在 LCS 中
-            let in_source_lcs = lcs_source_set.contains(&base_idx);
-            let in_target_lcs = lcs_target_set.contains(&base_idx);
+        while si < lcs_source_pairs.len() && ti < lcs_target_pairs.len() {
+            let (base_idx_s, source_idx) = lcs_source_pairs[si];
+            let (base_idx_t, target_idx) = lcs_target_pairs[ti];
 
-            if in_source_lcs && in_target_lcs {
-                // 三者相同
-                if base_idx < base.len() {
-                    hunks.push(Diff3Hunk::Identical(base[base_idx].to_string()));
-                    base_idx += 1;
-                    source_idx += 1;
-                    target_idx += 1;
-                } else {
-                    break;
-                }
-            } else if in_source_lcs && !in_target_lcs {
-                // 只有目标修改
-                let mut target_changes = Vec::new();
-                while target_idx < target.len()
-                    && !lcs_target_set.contains(&target_idx)
-                {
-                    target_changes.push(target[target_idx].to_string());
-                    target_idx += 1;
-                }
-                if !target_changes.is_empty() {
-                    hunks.push(Diff3Hunk::TargetOnly(target_changes.join("\n")));
-                }
-            } else if !in_source_lcs && in_target_lcs {
-                // 只有源修改
-                let mut source_changes = Vec::new();
-                while source_idx < source.len()
-                    && !lcs_source_set.contains(&source_idx)
-                {
-                    source_changes.push(source[source_idx].to_string());
-                    source_idx += 1;
-                }
-                if !source_changes.is_empty() {
-                    hunks.push(Diff3Hunk::SourceOnly(source_changes.join("\n")));
-                }
-            } else {
-                // 两者都修改
-                let mut base_lines = Vec::new();
-                let mut source_lines = Vec::new();
-                let mut target_lines = Vec::new();
+            if base_idx_s == base_idx_t {
+                // 找到共同锚点
+                let base_idx = base_idx_s;
 
-                // 收集变化的行
-                while base_idx < base.len()
-                    && !lcs_source_set.contains(&base_idx)
-                    && !lcs_target_set.contains(&base_idx)
-                {
-                    base_lines.push(base[base_idx].to_string());
-                    base_idx += 1;
-                }
+                // 处理这个锚点之前的区域
+                let base_chunk = &base[prev_base..base_idx];
+                let source_chunk = &source[prev_source..source_idx];
+                let target_chunk = &target[prev_target..target_idx];
 
-                while source_idx < source.len()
-                    && !lcs_source_set.contains(&source_idx)
-                {
-                    source_lines.push(source[source_idx].to_string());
-                    source_idx += 1;
-                }
-
-                while target_idx < target.len()
-                    && !lcs_target_set.contains(&target_idx)
-                {
-                    target_lines.push(target[target_idx].to_string());
-                    target_idx += 1;
-                }
-
-                let base_str = base_lines.join("\n");
-                let source_str = source_lines.join("\n");
-                let target_str = target_lines.join("\n");
-
-                // 判断是否是真冲突
-                if source_str == target_str {
-                    // 相同的修改
-                    hunks.push(Diff3Hunk::Identical(source_str));
-                } else if source_str.is_empty() || target_str.is_empty() {
-                    // 一方删除
-                    if source_str.is_empty() {
-                        hunks.push(Diff3Hunk::TargetOnly(target_str));
-                    } else {
-                        hunks.push(Diff3Hunk::SourceOnly(source_str));
+                if !base_chunk.is_empty() || !source_chunk.is_empty() || !target_chunk.is_empty() {
+                    let hunk = Self::classify_hunk(base_chunk, source_chunk, target_chunk);
+                    if let Some(h) = hunk {
+                        hunks.push(h);
                     }
+                }
+
+                // 添加锚点（相同行）
+                hunks.push(Diff3Hunk::Identical(base[base_idx].to_string()));
+
+                prev_base = base_idx + 1;
+                prev_source = source_idx + 1;
+                prev_target = target_idx + 1;
+
+                si += 1;
+                ti += 1;
+            } else if base_idx_s < base_idx_t {
+                si += 1;
+            } else {
+                ti += 1;
+            }
+        }
+
+        // 处理最后一个锚点之后的剩余部分
+        let base_chunk = &base[prev_base..];
+        let source_chunk = &source[prev_source..];
+        let target_chunk = &target[prev_target..];
+
+        if !base_chunk.is_empty() || !source_chunk.is_empty() || !target_chunk.is_empty() {
+            let hunk = Self::classify_hunk(base_chunk, source_chunk, target_chunk);
+            if let Some(h) = hunk {
+                hunks.push(h);
+            }
+        }
+
+        hunks
+    }
+
+    /// 分类 hunk 类型
+    fn classify_hunk(
+        base: &[&str],
+        source: &[&str],
+        target: &[&str],
+    ) -> Option<Diff3Hunk> {
+        let base_empty = base.is_empty();
+        let source_empty = source.is_empty();
+        let target_empty = target.is_empty();
+
+        let base_str = if base_empty { String::new() } else { base.join("\n") };
+        let source_str = if source_empty { String::new() } else { source.join("\n") };
+        let target_str = if target_empty { String::new() } else { target.join("\n") };
+
+        // 三者都空，跳过
+        if base_empty && source_empty && target_empty {
+            return None;
+        }
+
+        // 情况 1: 都没有变化
+        if !base_empty && !source_empty && !target_empty 
+           && base_str == source_str && source_str == target_str {
+            return Some(Diff3Hunk::Identical(base_str));
+        }
+
+        // 情况 2: 只有源修改
+        if !base_empty && !source_empty && target_empty {
+            return Some(Diff3Hunk::SourceOnly(source_str));
+        }
+
+        // 情况 3: 只有目标修改
+        if !base_empty && source_empty && !target_empty {
+            return Some(Diff3Hunk::TargetOnly(target_str));
+        }
+
+        // 情况 4: 两者都修改
+        if !source_empty && !target_empty {
+            if source_str == target_str {
+                // 相同的修改
+                return Some(Diff3Hunk::Identical(source_str));
+            } else if base_empty {
+                // 两者都添加不同内容 - 冲突
+                return Some(Diff3Hunk::Conflict {
+                    base: String::new(),
+                    source: source_str,
+                    target: target_str,
+                });
+            } else {
+                // 检查是否一方与 base 相同
+                if base_str == source_str {
+                    return Some(Diff3Hunk::TargetOnly(target_str));
+                } else if base_str == target_str {
+                    return Some(Diff3Hunk::SourceOnly(source_str));
                 } else {
                     // 真冲突
-                    hunks.push(Diff3Hunk::Conflict {
+                    return Some(Diff3Hunk::Conflict {
                         base: base_str,
                         source: source_str,
                         target: target_str,
@@ -268,7 +284,24 @@ impl AdvancedMerger {
             }
         }
 
-        hunks
+        // 情况 5: 只有一方有内容
+        if !source_empty && target_empty {
+            return Some(Diff3Hunk::SourceOnly(source_str));
+        }
+        if source_empty && !target_empty {
+            return Some(Diff3Hunk::TargetOnly(target_str));
+        }
+
+        // 情况 6: base 有内容，但 source 和 target 都删除了
+        if !base_empty && source_empty && target_empty {
+            return Some(Diff3Hunk::BothModified {
+                base: base_str,
+                source: String::new(),
+                target: String::new(),
+            });
+        }
+
+        None
     }
 
     /// 合并 hunks
@@ -654,20 +687,20 @@ mod tests {
         let a = vec!["A", "B", "C", "D", "E"];
         let b = vec!["A", "C", "D", "F", "E"];
 
-        let lcs = AdvancedMerger::compute_lcs(&a, &b);
+        let lcs = AdvancedMerger::compute_lcs_pairs(&a, &b);
 
-        // LCS 应该是 ["A", "C", "D", "E"] 的索引
+        // LCS 应该是 ["A", "C", "D", "E"]
         assert_eq!(lcs.len(), 4);
-        assert_eq!(a[lcs[0]], "A");
-        assert_eq!(a[lcs[1]], "C");
-        assert_eq!(a[lcs[2]], "D");
-        assert_eq!(a[lcs[3]], "E");
+        assert_eq!(a[lcs[0].0], "A");
+        assert_eq!(a[lcs[1].0], "C");
+        assert_eq!(a[lcs[2].0], "D");
+        assert_eq!(a[lcs[3].0], "E");
     }
 
     #[test]
     fn test_diff3_merge_no_conflict() {
         let temp_dir = TempDir::new().unwrap();
-        let merger = AdvancedMerger::new(&temp_dir.path(), &temp_dir.path()).unwrap();
+        let merger = AdvancedMerger::new(temp_dir.path(), temp_dir.path()).unwrap();
 
         let base = "line1\nline2\nline3";
         let source = "line1\nmodified\nline3";
@@ -683,7 +716,7 @@ mod tests {
     #[test]
     fn test_diff3_merge_with_conflict() {
         let temp_dir = TempDir::new().unwrap();
-        let merger = AdvancedMerger::new(&temp_dir.path(), &temp_dir.path()).unwrap();
+        let merger = AdvancedMerger::new(temp_dir.path(), temp_dir.path()).unwrap();
 
         let base = "line1\nline2\nline3";
         let source = "line1\nsource_change\nline3";
@@ -700,7 +733,7 @@ mod tests {
     #[test]
     fn test_diff3_merge_same_change() {
         let temp_dir = TempDir::new().unwrap();
-        let merger = AdvancedMerger::new(&temp_dir.path(), &temp_dir.path()).unwrap();
+        let merger = AdvancedMerger::new(temp_dir.path(), temp_dir.path()).unwrap();
 
         let base = "line1\nline2\nline3";
         let source = "line1\nsame_change\nline3";

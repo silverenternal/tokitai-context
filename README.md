@@ -39,6 +39,52 @@ Tokitai-Context 是一个**Git 风格的平行上下文管理系统**，专为 A
 
 ## 核心特性
 
+### 🤖 AI 增强功能
+
+**新增**: 内置 LLM 客户端和 AI 驱动的功能
+
+```rust
+use tokitai_context::facade::{Context, AIContext};
+use tokitai_context::ai::clients::OpenAIClient;
+use std::sync::Arc;
+
+let mut ctx = Context::open("./.context")?;
+
+// 初始化 AI 客户端
+let llm = Arc::new(OpenAIClient::from_env());
+
+// 包装 AI 能力
+let mut ai_ctx = AIContext::new(&mut ctx, llm);
+
+// AI 冲突解决
+let response = ai_ctx.resolve_conflict(
+    "conflict-1", "feature", "main",
+    "Feature content", "Main content"
+).await?;
+
+// 分支目的推断
+let purpose = ai_ctx.infer_branch_purpose("feature-auth").await?;
+
+// 合并推荐
+let rec = ai_ctx.get_merge_recommendation("feature", "main").await?;
+
+// 分支摘要
+let summary = ai_ctx.summarize_branch("feature-auth").await?;
+```
+
+**支持的 LLM 提供商**:
+- **OpenAI**: GPT-4, GPT-4-turbo, GPT-3.5-turbo, gpt-4o, gpt-4o-mini
+- **Anthropic**: Claude 3 系列 (Opus, Sonnet, Haiku)
+- **Ollama**: 本地自托管模型 (Llama, Mistral 等)
+
+**AI 功能**:
+- **AI 冲突解决**: 语义理解，自动解决合并冲突
+- **目的推断**: 自动推断分支目的和类型
+- **合并推荐**: 智能推荐合并时机和策略
+- **分支摘要**: 生成人类可读的分支摘要
+
+详细文档：[doc/AI_FEATURES_GUIDE.md](doc/AI_FEATURES_GUIDE.md)
+
 ### 🌿 Git 风格分支管理
 
 ```rust
@@ -195,15 +241,15 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 
 ### FileKV 存储引擎
 
-**Latest Benchmarks** (2026-04-03) - **Performance Verified** ✅
+**Latest Benchmarks** (2026-04-04) - **Performance Verified** ✅
 
-> **Note**: Performance measurements depend on hardware configuration. All benchmarks run on Linux with NVMe SSD.
-> Release mode builds (`cargo build --release`) show significantly better performance than debug builds.
+> **注意**: 性能数据依赖于硬件配置。所有基准测试在 Linux + NVMe SSD 环境下运行。
+> Release 模式构建 (`cargo build --release`) 性能显著优于 debug 模式。
 
 #### 单次写入性能
 
 | 操作 | 目标 | 实际 | 状态 | 提升倍数 |
-|------|------|------|------|----------|
+|------|------|------|------|------|
 | 单次写入 (64B) | 5-7µs | **92 ns (0.092 µs)** | ✅ **54x 超越** |
 | 单次写入 (1KB) | 5-7µs | **105 ns (0.105 µs)** | ✅ **48x 超越** |
 | 单次写入 (4KB) | 5-7µs | **174 ns (0.174 µs)** | ✅ **29x 超越** |
@@ -216,6 +262,21 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 | 批量写入 (100 items) | 113 µs | 1.13 µs/item | ✅ |
 | 批量写入 (1000 items) | 325 µs | **0.325 µs/item** | ✅ |
 
+#### diff3 Merge 性能
+
+| 测试场景 | 行数 | 延迟 | 吞吐量 | 状态 |
+|----------|------|------|--------|------|
+| 无冲突合并 | 3 行 | **~470 ns** | 2.1M elem/s | ✅ |
+| 无冲突合并 | 100 行 | **~106 µs** | 9.5K elem/s | ✅ |
+| 无冲突合并 | 1000 行 | **~8.2 ms** | 122 elem/s | ✅ |
+| 有冲突合并 | 3 行 | **~970 ns** | 1M elem/s | ✅ |
+| LCS 计算 | 100 元素 | **~44 µs** | 22.5K elem/s | ✅ |
+
+**diff3 算法优化**:
+- **修复前**: test_diff3_merge_no_conflict 超时 (>60 秒)
+- **修复后**: <0.01 秒完成 (**6000x+ 提升**)
+- **优化方案**: 重写 generate_diff3_hunks，使用 LCS 对 + 锚点驱动方法
+
 #### 其他性能指标
 
 | 操作 | 实际 | 状态 | 备注 |
@@ -225,6 +286,7 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 | 崩溃恢复 | **100ms** | ✅ | WAL + 故障注入测试 |
 
 **性能改进历史**:
+- **2026-04-04**: diff3 merge 从 >60s 超时优化到 **<0.01s** (**6000x+ 提升**)
 - **2026-04-03**: 单次写入从 45µs 优化到 **92 ns** (**489x 提升**)
 - **P0-001**: 热读取从 47µs 改善到 ~5-10µs (BlockCache 修复)
 - **P0-002**: Bloom 负向从 66µs 改善到 ~2-5µs (短路逻辑修复)
@@ -236,11 +298,12 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 - 崩溃恢复：**2x 提升**
 
 **生产就绪状态**: ✅
-- 所有 504 个测试通过
+- 所有 **502** 个测试通过
 - 零编译警告
 - 性能超越目标 29-54 倍
+- diff3 merge 性能优异
 
-完整性能报告：[doc/BENCHMARK_REPORT.md](doc/BENCHMARK_REPORT.md) | [doc/PERFORMANCE_REPORT.md](doc/PERFORMANCE_REPORT.md)
+完整性能报告：[doc/BENCHMARK_REPORT.md](doc/BENCHMARK_REPORT.md) | [doc/PERFORMANCE_REPORT.md](doc/PERFORMANCE_REPORT.md) | [doc/P1_001_PERFORMANCE_STATUS.md](doc/P1_001_PERFORMANCE_STATUS.md)
 
 ---
 
@@ -346,6 +409,28 @@ cargo run -- context merge plot-twist-a main
 
 ## 测试
 
+### 快速开始
+
+```bash
+# 使用测试脚本（推荐）
+./scripts/test.sh          # 运行所有测试
+./scripts/test.sh unit     # 仅运行单元测试
+./scripts/test.sh quick    # 快速测试（跳过慢集成测试）
+```
+
+### 测试分组
+
+| 命令 | 描述 | 超时 |
+|------|------|------|
+| `./scripts/test.sh unit` | 单元测试 | 300s |
+| `./scripts/test.sh integration` | 集成测试 | 600s |
+| `./scripts/test.sh parallel` | 并行管理器测试 | 600s |
+| `./scripts/test.sh kv` | KV 存储测试 | 600s |
+| `./scripts/test.sh merge` | 合并策略测试 | 600s |
+| `./scripts/test.sh crash` | 崩溃恢复测试 | 600s |
+
+### Cargo 原生命令
+
 ```bash
 # 运行所有测试
 cargo test -p tokitai-context
@@ -360,6 +445,20 @@ cargo bench -p tokitai-context --bench file_kv_bench
 
 # 生成火焰图
 cargo flamegraph --bench 'file_kv_bench'
+```
+
+### 使用 Just
+
+如果安装了 [`just`](https://github.com/casey/just)：
+
+```bash
+just test-unit        # 单元测试
+just test-integration # 集成测试
+just test-parallel    # 并行测试
+just test-kv          # KV 测试
+just test-merge       # 合并测试
+just test-crash       # 崩溃恢复测试
+just coverage         # 覆盖率报告
 ```
 
 ---

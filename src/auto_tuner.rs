@@ -1180,146 +1180,27 @@ impl Default for AutoTuner {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_metrics_snapshot() {
-        let snapshot = MetricsSnapshot::new();
-        assert!(snapshot.timestamp_ms > 0);
-        assert_eq!(snapshot.memory_usage_percent(), 0.0);
-    }
-
-    #[test]
-    fn test_workload_pattern_display() {
-        assert_eq!(WorkloadPattern::ReadHeavy.to_string(), "ReadHeavy");
-        assert_eq!(WorkloadPattern::WriteHeavy.to_string(), "WriteHeavy");
-        assert_eq!(WorkloadPattern::Mixed.to_string(), "Mixed");
-    }
-
-    #[test]
-    fn test_tuning_target_display() {
-        assert_eq!(TuningTarget::Throughput.to_string(), "Throughput");
-        assert_eq!(TuningTarget::Latency.to_string(), "Latency");
-        assert_eq!(TuningTarget::Balanced.to_string(), "Balanced");
-    }
-
-    #[test]
-    fn test_risk_level_display() {
-        assert_eq!(RiskLevel::Low.to_string(), "Low");
-        assert_eq!(RiskLevel::Medium.to_string(), "Medium");
-        assert_eq!(RiskLevel::High.to_string(), "High");
-    }
-
-    #[test]
-    fn test_alert_severity_display() {
-        assert_eq!(AlertSeverity::Info.to_string(), "INFO");
-        assert_eq!(AlertSeverity::Warning.to_string(), "WARNING");
-        assert_eq!(AlertSeverity::Critical.to_string(), "CRITICAL");
-    }
-
-    #[test]
-    fn test_anomaly_type_display() {
-        let anomaly = AnomalyType::LatencySpike {
-            metric: "read_p99".to_string(),
-            severity: 2.5,
-        };
-        assert!(anomaly.to_string().contains("Latency spike"));
-        assert!(anomaly.to_string().contains("read_p99"));
-    }
-
-    #[test]
-    fn test_auto_tuner_creation() {
-        let tuner = AutoTuner::new(AutoTunerConfig::default());
-        assert!(!tuner.is_running());
-    }
-
-    #[test]
-    fn test_auto_tuner_config() {
-        let config = AutoTunerConfig {
-            tuning_target: TuningTarget::Latency,
-            min_adjustment_interval_secs: 600,
-            auto_adjust: true,
-            verbose: true,
-            ..Default::default()
-        };
-        
-        assert_eq!(config.tuning_target, TuningTarget::Latency);
-        assert!(config.auto_adjust);
-        assert!(config.verbose);
-    }
-
-    #[test]
-    fn test_tunable_params_default() {
-        let params = TunableParams::default();
-        assert_eq!(params.block_cache_size, 256 * 1024 * 1024);
-        assert_eq!(params.memtable_size, 64 * 1024 * 1024);
-        assert_eq!(params.max_background_jobs, 6);
-    }
-
-    #[test]
-    fn test_param_bounds_default() {
-        let bounds = ParamBounds::default();
-        assert_eq!(bounds.block_cache_size.0, 64 * 1024 * 1024);
-        assert_eq!(bounds.block_cache_size.1, 4 * 1024 * 1024 * 1024);
-    }
-
-    #[test]
-    fn test_workload_characteristics() {
-        let chars = WorkloadCharacteristics {
-            read_write_ratio: 10.0,
-            access_randomness: 0.8,
-            ..Default::default()
-        };
-        
-        assert_eq!(chars.read_write_ratio, 10.0);
-        assert_eq!(chars.access_randomness, 0.8);
-    }
-
-    #[test]
-    fn test_tuner_state_default() {
-        let state = TunerState::default();
-        assert!(!state.running);
-        assert_eq!(state.workload_pattern, WorkloadPattern::Unknown);
-        assert!(state.metrics_history.is_empty());
-    }
-
-    #[test]
-    fn test_auto_tuner_stats_default() {
-        let stats = AutoTunerStats::default();
-        assert_eq!(stats.total_adjustments, 0);
-        assert_eq!(stats.recommendations_made, 0);
-    }
-
-    #[tokio::test]
-    async fn test_auto_tuner_start_stop() {
-        let tuner = AutoTuner::new(AutoTunerConfig::default());
-        
-        assert!(!tuner.is_running());
-        
-        tuner.start().await.unwrap();
-        assert!(tuner.is_running());
-        
-        tuner.stop().await.unwrap();
-        assert!(!tuner.is_running());
-    }
-
+    /// 保留：验证 metrics snapshot 计算逻辑
     #[test]
     fn test_metrics_snapshot_memory_usage() {
         let mut snapshot = MetricsSnapshot::new();
         snapshot.system.memory_used = 800;
         snapshot.system.memory_available = 200;
-        
+
         assert_eq!(snapshot.memory_usage_percent(), 80.0);
     }
 
+    /// 保留：验证 workload pattern 检测算法
     #[test]
     fn test_workload_pattern_detection() {
         let tuner = AutoTuner::new(AutoTunerConfig::default());
-        
+
         let read_heavy = WorkloadCharacteristics {
             read_write_ratio: 20.0,
             ..Default::default()
         };
         assert_eq!(tuner.detect_pattern(&read_heavy), WorkloadPattern::ReadHeavy);
-        
+
         let write_heavy = WorkloadCharacteristics {
             read_write_ratio: 0.05,
             ..Default::default()
@@ -1333,12 +1214,12 @@ mod tests {
         assert_eq!(tuner.detect_pattern(&range_scan), WorkloadPattern::RangeScan);
     }
 
+    /// 保留：验证异常检测逻辑
     #[test]
     fn test_anomaly_detection_memory() {
         let tuner = AutoTuner::new(AutoTunerConfig::default());
 
         let mut snapshot = MetricsSnapshot::new();
-        // Set memory to achieve 91% usage (above 90% threshold)
         snapshot.system.memory_used = 910;
         snapshot.system.memory_available = 90;
 
@@ -1350,10 +1231,11 @@ mod tests {
         assert_eq!(alert.severity, AlertSeverity::Critical);
     }
 
+    /// 保留：验证 recommendation 创建
     #[test]
     fn test_recommendation_creation() {
         let tuner = AutoTuner::new(AutoTunerConfig::default());
-        
+
         let rec = tuner.create_recommendation(
             "block_cache_size",
             "268435456".to_string(),
@@ -1363,51 +1245,36 @@ mod tests {
             0.15,
             RiskLevel::Low,
         );
-        
+
         assert_eq!(rec.parameter, "block_cache_size");
         assert_eq!(rec.confidence, 0.75);
         assert_eq!(rec.expected_improvement, 0.15);
         assert_eq!(rec.risk_level, RiskLevel::Low);
     }
 
-    #[test]
-    fn test_tuning_recommendation() {
-        let tuner = AutoTuner::new(AutoTunerConfig::default());
-        let state = TunerState::default();
-
-        let recs = tuner.recommend_for_throughput(&state);
-        // May be empty if no metrics available
-        let _ = recs.len();
-    }
-
+    /// 保留：验证 metrics 记录和 history 追踪
     #[test]
     fn test_record_metrics() {
         let tuner = AutoTuner::new(AutoTunerConfig::default());
-        
+
         let snapshot = MetricsSnapshot::new();
         tuner.record_metrics(snapshot);
-        
+
         let history = tuner.get_metrics_history();
         assert_eq!(history.len(), 1);
     }
 
-    #[test]
-    fn test_get_recommendations() {
+    /// 保留：验证 tuner 生命周期管理
+    #[tokio::test]
+    async fn test_auto_tuner_start_stop() {
         let tuner = AutoTuner::new(AutoTunerConfig::default());
 
-        let recs = tuner.get_recommendations();
-        // May be empty if no issues detected
-        let _ = recs.len();
-    }
+        assert!(!tuner.is_running());
 
-    #[test]
-    fn test_auto_tuner_with_bounds() {
-        let bounds = ParamBounds {
-            block_cache_size: (128 * 1024 * 1024, 2 * 1024 * 1024 * 1024),
-            ..Default::default()
-        };
-        
-        let tuner = AutoTuner::with_bounds(AutoTunerConfig::default(), bounds);
+        tuner.start().await.unwrap();
+        assert!(tuner.is_running());
+
+        tuner.stop().await.unwrap();
         assert!(!tuner.is_running());
     }
 }

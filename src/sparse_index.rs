@@ -526,7 +526,7 @@ mod tests {
             let index = manager.create_index(seg_id);
             for i in 0..150 {
                 let key = format!("key_{:04}", seg_id * 1000 + i);
-                index.maybe_add_index_point(&key, i as u64 * 100, i as u64);
+                index.maybe_add_index_point(&key, i * 100, i);
             }
             manager.save_index(seg_id).unwrap();
         }

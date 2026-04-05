@@ -435,10 +435,10 @@ mod tests {
         std::fs::write(&redis_file, "# Redis 缓存策略\n\n缓存策略包括...").unwrap();
 
         let index = KnowledgeIndex::from_directory(temp_dir.path()).unwrap();
-        
+
         assert_eq!(index.index.len(), 2);
-        
-        let mysql_node = index.get(&mysql_file.to_string_lossy().to_string()).unwrap();
+
+        let mysql_node = index.get(mysql_file.to_string_lossy().as_ref()).unwrap();
         assert_eq!(mysql_node.tags, vec!["数据库"]);
     }
 
@@ -477,6 +477,6 @@ mod tests {
         // 使用标签推荐而不是关键词
         let recommended = index.recommend("数据库", 3);
         // 至少应该返回一个结果（因为标签匹配）
-        assert!(!recommended.is_empty() || index.all_nodes().len() > 0);
+        assert!(!recommended.is_empty() || !index.all_nodes().is_empty());
     }
 }

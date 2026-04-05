@@ -687,14 +687,13 @@ mod tests {
         let target = create_test_branch_with_files(&temp_dir, "target", "target", "base", &[("file1.txt", "target_change")]);
 
         let merger = ThreeWayMerger::new(temp_dir.path()).unwrap();
-        let result = merger.merge(&source, &target, &base).unwrap();
 
         // Three-way merge should detect this as a true conflict
         // Both source and target modified the same file differently from base
         // Note: Current implementation may not detect this properly due to independent directories
         // This is a known limitation - the test verifies the API works correctly
         // Verify merge operation executed and returned valid results
-        assert!(result.conflict_count == 0 || result.conflict_count > 0);
+        let _result = merger.merge(&source, &target, &base).unwrap();
     }
 
     #[test]

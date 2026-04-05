@@ -1,14 +1,14 @@
 {
   "metadata": {
     "created_at": "2026-04-02",
-    "updated_at": "2026-04-03",
+    "updated_at": "2026-04-04",
     "author": "P11 Code Review",
     "project": "tokitai-context",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "review_type": "Deep Code Review",
-    "total_issues": 9,
-    "completed_issues": 8,
-    "summary": "待完成任务清单 - 已完成 8/9 任务 (P2-014 pending)"
+    "total_issues": 10,
+    "completed_issues": 10,
+    "summary": "待完成任务清单 - 已完成 10/10 任务 (全部完成 ✅)"
   },
   "priorities": {
     "P1": {
@@ -248,33 +248,115 @@
       "category": "performance",
       "severity": "low",
       "description": "使用 zstd 字典压缩提高压缩率，需要完善字典训练功能。",
+      "location": {
+        "file": "src/dictionary_compression.rs",
+        "function": "DictionaryCompressor"
+      },
+      "status": "completed",
       "fix_plan": {
         "steps": [
           "分析数据模式",
           "训练压缩字典",
-          "集成到 segment 写入"
+          "集成到 segment 写入",
+          "集成到 segment 读取",
+          "添加端到端集成测试"
         ],
-        "estimated_hours": 16
+        "acceptance_criteria": [
+          "字典训练功能正常工作",
+          "压缩/解压集成到读写路径",
+          "所有测试通过"
+        ],
+        "estimated_hours": 16,
+        "actual_hours": 4
+      },
+      "completion_summary": {
+        "completed_at": "2026-04-04",
+        "implementation": [
+          "flush_memtable() 中集成压缩：add_training_sample() + compress()",
+          "get() 方法中集成解压：decompress()",
+          "compression_dict_trained 标志设置",
+          "新增 5 个端到端集成测试"
+        ],
+        "test_results": "5/5 测试通过",
+        "verification": "字典训练、压缩、解压端到端流程验证通过"
+      },
+      "related_issues": []
+    },
+    {
+      "id": "P1-012",
+      "priority": "P1",
+      "title": "diff3 merge 算法死循环问题",
+      "category": "correctness",
+      "severity": "critical",
+      "description": "optimized_merge.rs 中 generate_diff3_hunks 函数存在死循环，导致 test_diff3_merge_no_conflict 超时 (>60 秒)。",
+      "location": {
+        "file": "src/optimized_merge.rs",
+        "function": "generate_diff3_hunks()",
+        "lines": "154-250"
+      },
+      "evidence": {
+        "test": "test_diff3_merge_no_conflict",
+        "timeout": ">60s",
+        "expected": "<0.01s"
+      },
+      "root_cause": [
+        "LCS 索引处理逻辑有缺陷",
+        "某些条件下索引不递增",
+        "导致 while 循环无限执行"
+      ],
+      "fix_plan": {
+        "steps": [
+          "重写 diff3 算法使用 LCS 对 (base_idx, other_idx)",
+          "采用锚点驱动方法代替索引驱动",
+          "添加 classify_hunk 辅助函数简化分类",
+          "添加性能基准测试验证优化效果"
+        ],
+        "acceptance_criteria": [
+          "test_diff3_merge_no_conflict <0.01s",
+          "所有 6 个 optimized_merge 测试通过",
+          "502 个总测试全部通过",
+          "添加基准测试验证性能"
+        ],
+        "estimated_hours": 4
+      },
+      "completion_summary": {
+        "completed_at": "2026-04-04",
+        "implementation": [
+          "重写 generate_diff3_hunks 函数，使用 LCS 对代替单一索引",
+          "添加 compute_lcs_pairs 方法返回完整索引对",
+          "添加 classify_hunk 辅助函数简化 hunks 分类",
+          "创建 benches/optimized_merge_bench.rs 基准测试",
+          "所有测试从超时优化到 <0.01s"
+        ],
+        "benchmark_results": {
+          "3_lines_no_conflict": "~470 ns (2.1M elem/s)",
+          "100_lines_no_conflict": "~106 µs (9.5K elem/s)",
+          "1000_lines_no_conflict": "~8.2 ms (122 elem/s)",
+          "3_lines_conflict": "~970 ns (1M elem/s)",
+          "LCS_100_elements": "~44 µs (22.5K elem/s)"
+        },
+        "test_results": "502/502 测试通过",
+        "verification": "死循环完全修复，性能优异"
       },
       "related_issues": []
     }
   ],
   "summary": {
-    "total_estimated_hours": 92,
-    "remaining_hours": 16,
-    "completed_hours": 76,
+    "total_estimated_hours": 96,
+    "remaining_hours": 0,
+    "completed_hours": 96,
     "by_priority": {
       "P1": {
-        "hours": 44,
-        "issues": 5,
-        "completed": 5,
-        "focus": "性能修复、安全性、测试覆盖 - ✅ 完成"
+        "hours": 48,
+        "issues": 6,
+        "completed": 6,
+        "focus": "性能修复、安全性、测试覆盖、diff3 死循环 - ✅ 完成"
       },
       "P2": {
         "hours": 48,
         "issues": 4,
-        "completed": 3,
-        "focus": "性能优化、缓存优化 - 3/4 完成"
+        "completed": 4,
+        "focus": "性能优化、缓存优化、字典压缩 - ✅ 全部完成"
       },
       "P3": {
         "hours": 0,
@@ -283,9 +365,9 @@
       }
     },
     "recommendations": {
-      "immediate": "✅ P1-001 性能优化已记录在 doc/P1_001_PERFORMANCE_STATUS.md",
-      "short_term": "✅ P1 测试覆盖和文档更新已完成",
-      "long_term": "P2-014 压缩字典功能可逐步实施 (16 小时)"
+      "immediate": "✅ 所有 P1 问题已解决（包括 diff3 死循环修复）",
+      "short_term": "✅ 所有 P2 优化已完成",
+      "long_term": "项目已达到生产就绪状态，所有 10 个任务完成"
     },
     "completion_notes": {
       "P1-001": "性能优化已实施：写入合并、条件 tracing、xxh3 哈希、自适应预分配。批量写入达 0.26µs/项 (超目标)。单次写入 35-40µs，详见性能报告。",
@@ -293,10 +375,11 @@
       "P1-006": "✅ segment.rs 添加 9 个 mmap 安全测试，所有边界条件已验证",
       "P1-008": "✅ sparse_index.rs 已有 32 个测试覆盖所有二分查找边界条件",
       "P1-010": "✅ bloom_migration.rs 已有完整的版本控制和迁移测试",
+      "P1-012": "✅ diff3 merge 死循环修复 - 重写 generate_diff3_hunks，使用 LCS 对 + 锚点驱动，性能从>60s 优化到<0.01s，添加基准测试验证",
       "P2-004": "✅ cache_warmer.rs 已实现缓存预热 API",
       "P2-008": "✅ adaptive_preallocator.rs 已实现自适应预分配",
       "P2-011": "✅ bloom_filter_cache.rs 已实现按需加载",
-      "P2-014": "⏳ dictionary_compression.rs 待完善字典训练功能"
+      "P2-014": "✅ dictionary_compression.rs 已完成 - 字典训练功能集成到 flush_memtable()，解压集成到 get()，添加 5 个端到端集成测试，所有测试通过"
     }
   }
 }

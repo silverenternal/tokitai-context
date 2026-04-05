@@ -838,14 +838,16 @@ mod tests {
     #[test]
     fn test_create_checkpoint() {
         let temp_dir = TempDir::new().unwrap();
-        let mut config = PitrConfig::default();
-        config.auto_checkpoint = false;
-        
+        let config = PitrConfig {
+            auto_checkpoint: false,
+            ..Default::default()
+        };
+
         let mut manager = PitrManager::new(config, temp_dir.path()).unwrap();
-        
+
         let checkpoint = manager.create_checkpoint("test");
         assert!(checkpoint.is_ok());
-        
+
         let checkpoint = checkpoint.unwrap();
         assert!(checkpoint.id.starts_with("test_"));
         assert_eq!(checkpoint.point_type, RecoveryPointType::FullCheckpoint);

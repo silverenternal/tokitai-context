@@ -111,37 +111,17 @@ mod knowledge_index;
 mod knowledge_watcher;
 mod path_resolver;
 
-// Parallel context management
-mod branch;
-mod graph;
-mod merge;
-mod parallel_manager;
-mod cow;
-mod cache;
+// Legacy modules (now organized into subdirectories)
+// These are re-exported from the new modular structure:
+// - parallel/: branch, graph, merge, manager, cow, parallel_cache
+// - optimization/: cache, compression, dedup, algorithms
+// - ai/: resolver, purpose, smart_merge, summarizer, enhanced_manager
 
-// Merge algorithms and optimizations
+// Merge algorithms (still in root - TODO: move to parallel/merge/)
 mod three_way_merge;
 mod bloom_conflict;
-mod optimized_merge;
-mod storage_optimization;
+pub mod optimized_merge;
 mod parallel_merge;
-
-// Caching and compression
-mod lru_cache;
-mod arc_cache;
-mod cuckoo_filter;
-mod dictionary_compression;
-
-// Optimization algorithms
-mod hirschberg_lcs;
-mod minhash_lsh;
-
-// AI integration (optional)
-mod ai_resolver;
-mod purpose_inference;
-mod smart_merge;
-mod summarizer;
-mod ai_enhanced_manager;
 
 // Additional utilities
 mod window_manager;
@@ -151,6 +131,7 @@ mod unified_manager;
 pub mod core;
 pub mod parallel;
 pub mod optimization;
+#[cfg(feature = "ai")]
 pub mod ai;
 pub mod facade;
 pub mod wal;
@@ -197,6 +178,9 @@ pub use facade::{
     Context, ContextConfig, ContextItem, ContextStats,
     Layer, RecoveryReport, SearchHit,
 };
+
+#[cfg(feature = "ai")]
+pub use facade::AIContext;
 
 // WAL (Write-Ahead Log)
 pub use wal::{
@@ -258,8 +242,8 @@ pub use query_optimizer::{
     QueryOptimizer, OptimizerConfig, Query, QueryOp, QueryValue, QueryPredicate,
     QueryExecutor, QueryResult, QueryRow, LogicalPlan, PhysicalPlan, PlanNode,
     SortOrder, AggregateFunction, JoinType, JoinCondition, CostModel,
-    TableStatistics, ColumnStatistics, IndexStatistics, PlanStatistics,
-    ExecutionStats, SortAlgorithm, DistinctMethod,
+    TableStatistics, ColumnStatistics, IndexStatistics, Histogram, HistogramBucket,
+    PlanStatistics, SortAlgorithm, DistinctMethod, ExecutionStats,
 };
 
 // Auto tuner

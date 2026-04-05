@@ -398,7 +398,7 @@ impl BenchmarkSuite {
 
         for result in &self.results {
             report.push_str(&format!("{}", result));
-            report.push_str("\n");
+            report.push('\n');
         }
 
         report.push_str("═══════════════════════════════════════════════════════\n");

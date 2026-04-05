@@ -567,8 +567,10 @@ mod tests {
     #[test]
     fn test_trim_for_cloud() {
         let temp_dir = TempDir::new().unwrap();
-        let mut config = FileContextConfig::default();
-        config.max_short_term_rounds = 2;
+        let config = FileContextConfig {
+            max_short_term_rounds: 2,
+            ..Default::default()
+        };
         let mut service = FileContextServiceImpl::new(temp_dir.path(), config).unwrap();
 
         // 添加 5 个项目

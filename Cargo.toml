@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [features]
 default = ["wal"]
 # AI 增强功能（冲突解决、目的推断、智能合并推荐）
-ai = ["dep:reqwest"]
+ai = ["dep:reqwest", "dep:jsonschema", "dep:dotenvy"]
 # WAL (Write-Ahead Log) for crash recovery
 wal = []
 # 性能基准测试
@@ -100,6 +100,12 @@ uuid = { version = "1.0", features = ["v4"] }
 # LLM client interface (for AI features)
 reqwest = { version = "0.11", features = ["json"], optional = true }
 
+# JSON Schema validation (for AI structured output)
+jsonschema = { version = "0.18", optional = true }
+
+# Environment variable loading from .env file
+dotenvy = { version = "0.15", optional = true }
+
 # Distributed coordination
 etcd-client = { version = "0.14", optional = true }
 tokio-stream = { version = "0.1", optional = true }
@@ -139,3 +145,30 @@ name = "profiling_bench"
 path = "benches/profiling_bench.rs"
 harness = false
 required-features = ["benchmarks"]
+
+[[bench]]
+name = "simd_checksum_bench"
+path = "benches/simd_checksum_bench.rs"
+harness = false
+required-features = ["benchmarks"]
+
+[[bench]]
+name = "optimized_merge_bench"
+path = "benches/optimized_merge_bench.rs"
+harness = false
+required-features = ["benchmarks"]
+
+[[example]]
+name = "ai_conflict_resolution"
+path = "examples/ai_conflict_resolution.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "ai_purpose_inference"
+path = "examples/ai_purpose_inference.rs"
+required-features = ["ai"]
+
+[[example]]
+name = "ai_workflow"
+path = "examples/ai_workflow.rs"
+required-features = ["ai"]

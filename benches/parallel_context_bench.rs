@@ -6,7 +6,6 @@
 //! - 合并算法性能对比
 //! - 缓存命中率
 
-use std::path::PathBuf;
 use std::time::Instant;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 
@@ -164,8 +163,8 @@ fn bench_diff3_merge(c: &mut Criterion) {
                 b.iter(|| {
                     let temp_dir = tempfile::tempdir().unwrap();
                     let merger = AdvancedMerger::new(
-                        &temp_dir.path(),
-                        &temp_dir.path(),
+                        temp_dir.path(),
+                        temp_dir.path(),
                     ).unwrap();
 
                     // 生成测试内容
@@ -391,7 +390,7 @@ fn bench_merge_comparison(c: &mut Criterion) {
             let target_dir = temp_dir.path().join("target");
             let target_branch = create_test_branch("target", "base", &target_dir, 20);
 
-            let merger = ThreeWayMerger::new(&temp_dir.path().join("three_way")).unwrap();
+            let merger = ThreeWayMerger::new(temp_dir.path().join("three_way")).unwrap();
 
             black_box(merger.merge(
                 &source_branch,

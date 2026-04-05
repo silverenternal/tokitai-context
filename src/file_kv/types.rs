@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, AtomicU64, Ordering};
 use crate::block_cache::BlockCacheConfig;
 use crate::compaction::CompactionConfig;
 use super::memtable::MemTableConfig;
-use crate::dictionary_compression::DictionaryCompressionConfig;
+use crate::optimization::compression::dictionary::DictionaryCompressionConfig;
 use crate::audit_log::AuditLogConfig;
 
 /// Bloom Filter 文件魔法数 (exported for bloom module)

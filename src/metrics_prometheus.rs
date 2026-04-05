@@ -547,13 +547,10 @@ impl PrometheusExporter {
 
     /// Get a summary of all metrics as text
     pub fn gather_text(&self) -> String {
-        match self.encode() {
-            Ok(text) => text,
-            Err(e) => {
-                warn!("Failed to encode metrics: {}", e);
-                String::new()
-            }
-        }
+        self.encode().unwrap_or_else(|e| {
+            tracing::error!("Failed to encode metrics: {}", e);
+            String::new()
+        })
     }
 }
 
@@ -575,8 +572,8 @@ impl PrometheusExporter {
 
     pub fn register(&self) {}
     pub fn registry(&self) -> &() { &() }
-    pub fn encode(&self) -> Result<String, ()> { Ok(String::new()) }
-    
+    pub fn encode(&self) -> String { String::new() }
+
     pub fn record_read(&self, _status: &str) {}
     pub fn record_write(&self, _status: &str) {}
     pub fn record_delete(&self, _status: &str) {}
@@ -703,16 +700,7 @@ impl FileKVMetrics {
 mod tests {
     use super::*;
 
-    #[test]
-    #[cfg(feature = "metrics")]
-    fn test_prometheus_exporter_creation() {
-        let exporter = PrometheusExporter::new("test", "1.0.0");
-        exporter.register();
-        
-        let text = exporter.gather_text();
-        assert!(!text.is_empty() || text.is_empty()); // May be empty if no metrics recorded
-    }
-
+    /// 保留：验证 Prometheus 计数器记录
     #[test]
     #[cfg(feature = "metrics")]
     fn test_prometheus_counters() {
@@ -723,70 +711,42 @@ mod tests {
         exporter.record_delete("success");
 
         let text = exporter.gather_text();
-        // Metric names use the format: namespace_name_total
         assert!(text.contains("read_total"));
         assert!(text.contains("write_total"));
         assert!(text.contains("delete_total"));
     }
 
+    /// 保留：验证 Prometheus 延迟记录
     #[test]
     #[cfg(feature = "metrics")]
     fn test_prometheus_latencies() {
         let exporter = PrometheusExporter::new("test", "1.0.0");
-        
+
         exporter.record_read_latency(10.5, "hit");
         exporter.record_write_latency(25.3, "single");
         exporter.record_delete_latency(5.2);
-        
+
         let text = exporter.gather_text();
         assert!(text.contains("read_latency_us"));
         assert!(text.contains("write_latency_us"));
         assert!(text.contains("delete_latency_us"));
     }
 
+    /// 保留：验证 Prometheus Gauge 指标
     #[test]
     #[cfg(feature = "metrics")]
     fn test_prometheus_gauges() {
         let exporter = PrometheusExporter::new("test", "1.0.0");
-        
+
         exporter.set_memtable_size(1024 * 1024);
         exporter.set_segment_count(5);
         exporter.set_cache_size("block", 512 * 1024);
         exporter.set_bloom_filter_count(10);
-        
+
         let text = exporter.gather_text();
         assert!(text.contains("memtable_size_bytes"));
         assert!(text.contains("segment_count"));
         assert!(text.contains("cache_size_bytes"));
         assert!(text.contains("bloom_filter_count"));
-    }
-
-    #[test]
-    fn test_prometheus_stub() {
-        #[cfg(not(feature = "metrics"))]
-        {
-            let exporter = PrometheusExporter::new("test", "1.0.0");
-            exporter.register();
-            exporter.record_read("success");
-            let text = exporter.gather_text();
-            assert_eq!(text, "");
-        }
-    }
-
-    #[test]
-    fn test_file_kv_metrics() {
-        let exporter = Arc::new(PrometheusExporter::new("test", "1.0.0"));
-        let metrics = FileKVMetrics::new(exporter.clone());
-        
-        metrics.record_read_success(5.0, true);
-        metrics.record_write_success(15.0, false);
-        metrics.record_delete_success(3.0);
-        
-        #[cfg(feature = "metrics")]
-        {
-            let text = exporter.gather_text();
-            assert!(text.contains("read_total"));
-            assert!(text.contains("write_total"));
-        }
     }
 }

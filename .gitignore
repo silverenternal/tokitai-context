@@ -1,0 +1,68 @@
+# Rust
+/target/
+**/target/
+
+# Build artifacts
+*.rlib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Test binary
+**/*.test
+
+# Benchmarks
+benches/*.bin
+*.bench
+
+# Index files (runtime generated)
+/index/*.bin
+
+# Checkpoints (runtime generated)
+/checkpoints/*
+!/checkpoints/.gitkeep
+
+# WAL files
+*.wal
+*.log
+/wal/segments/*
+!/wal/segments/.gitkeep
+
+# Environment
+.env
+*.local
+
+# Qwen Code settings (user-specific)
+.qwen/settings.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage/
+tarpaulin-report.html
+
+# Profiling
+*.profraw
+*.profdata
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Logs
+*.log
+logs/

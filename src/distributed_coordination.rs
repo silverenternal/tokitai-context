@@ -177,7 +177,7 @@ impl CoordinationStats {
     }
 
     /// Clone the stats
-    pub fn clone(&self) -> Self {
+    pub fn clone_stats(&self) -> Self {
         Self {
             lock_acquisitions: AtomicU64::new(self.lock_acquisitions.load(Ordering::Relaxed)),
             lock_releases: AtomicU64::new(self.lock_releases.load(Ordering::Relaxed)),
@@ -704,8 +704,6 @@ impl LeaderElection {
             })?;
 
         // Spawn watch task
-        let election_key = self.election_key.clone();
-        let stats = self.stats.clone();
         let is_running = self.is_running.clone();
 
         tokio::spawn(async move {

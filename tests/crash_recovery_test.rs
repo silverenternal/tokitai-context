@@ -414,7 +414,7 @@ fn test_fault_injection_malformed_segment() {
     if let Ok(entries) = fs::read_dir(&segment_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "log") {
+            if path.extension().is_some_and(|ext| ext == "log") {
                 // Corrupt the segment by truncating it
                 let metadata = fs::metadata(&path).unwrap();
                 if metadata.len() > 16 {

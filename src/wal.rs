@@ -886,7 +886,7 @@ mod tests {
                 let entry = e.unwrap();
                 let path = entry.path();
                 let ext = path.extension().and_then(|s| s.to_str());
-                if ext == Some("log") || ext.map_or(false, |s| s.starts_with("log.")) {
+                if ext == Some("log") || ext.is_some_and(|s| s.starts_with("log.")) {
                     Some(path)
                 } else {
                     None

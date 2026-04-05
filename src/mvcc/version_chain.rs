@@ -465,9 +465,9 @@ mod tests {
         chain.put(1, b"v1".to_vec());
         chain.put(3, b"v3".to_vec());
         chain.put(5, b"v5".to_vec());
-        
-        let active_set = vec![3, 5];
-        
+
+        let active_set = [3, 5];
+
         // Visible: txn_id < 6 AND txn_id not in {3, 5}
         // So version 1 is the latest visible
         let visible = chain.get_visible(|txn_id| txn_id < 6 && !active_set.contains(&txn_id));

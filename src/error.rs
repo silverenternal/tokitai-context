@@ -428,9 +428,10 @@ mod tests {
         let result: crate::error::Result<()> = Err(validation.errors.into_iter().next().unwrap().into());
         assert!(result.is_err());
 
-        let err = result.unwrap_err();
-        assert!(matches!(err, FileKVError::Config(_)));
-        // Config errors have their own category
-        assert_eq!(err.category(), ErrorCategory::Config);
+        if let Err(err) = result {
+            assert!(matches!(err, FileKVError::Config(_)));
+            // Config errors have their own category
+            assert_eq!(err.category(), ErrorCategory::Config);
+        }
     }
 }

@@ -478,12 +478,14 @@ mod tests {
     #[test]
     fn test_cache_warming_disabled() {
         let cache = Arc::new(BlockCache::new(crate::block_cache::BlockCacheConfig::default()));
-        let mut config = CacheWarmingConfig::default();
-        config.enabled = false;
-        
+        let config = CacheWarmingConfig {
+            enabled: false,
+            ..Default::default()
+        };
+
         let warmer = CacheWarmer::new(config, cache);
         let stats = warmer.warm(&[]).unwrap();
-        
+
         assert!(!stats.completed);
         assert_eq!(stats.entries_loaded, 0);
     }

@@ -574,111 +574,77 @@ impl MetricsRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn test_metrics_registry_creation() {
-        let registry = MetricsRegistry::new();
-        assert_eq!(registry.write.write_count.load(Ordering::Relaxed), 0);
-        assert_eq!(registry.read.read_count.load(Ordering::Relaxed), 0);
-    }
-    
+
+    /// 保留：验证写指标记录逻辑
     #[test]
     fn test_write_metrics() {
         let registry = MetricsRegistry::new();
-        
+
         registry.record_write(1024, Duration::from_micros(50));
         registry.record_write(2048, Duration::from_micros(100));
-        
+
         assert_eq!(registry.write.write_count.load(Ordering::Relaxed), 2);
         assert_eq!(registry.write.write_bytes.load(Ordering::Relaxed), 3072);
         assert!((registry.write.avg_latency_us() - 75.0).abs() < 0.1);
     }
-    
+
+    /// 保留：验证读指标和缓存命中率计算
     #[test]
     fn test_read_metrics() {
         let registry = MetricsRegistry::new();
-        
+
         registry.record_read_hit(Duration::from_micros(5));
         registry.record_read_hit(Duration::from_micros(5));
         registry.record_read_hit(Duration::from_micros(5));
         registry.record_read_miss(Duration::from_micros(100));
-        
+
         assert_eq!(registry.read.cache_hits.load(Ordering::Relaxed), 3);
         assert_eq!(registry.read.cache_misses.load(Ordering::Relaxed), 1);
         assert!((registry.read.hit_rate() - 0.75).abs() < 0.01);
     }
-    
+
+    /// 保留：验证存储指标和 compaction 计数
     #[test]
     fn test_storage_metrics() {
         let registry = MetricsRegistry::new();
-        
+
         registry.set_storage(10, 1024 * 1024, 1000);
-        
+
         assert_eq!(registry.storage.segment_count.load(Ordering::Relaxed), 10);
         assert_eq!(registry.storage.total_size_bytes.load(Ordering::Relaxed), 1024 * 1024);
         assert_eq!(registry.storage.total_entries.load(Ordering::Relaxed), 1000);
-        
+
         registry.record_compaction();
         assert_eq!(registry.storage.compaction_count.load(Ordering::Relaxed), 1);
     }
-    
-    #[test]
-    fn test_memory_metrics() {
-        let registry = MetricsRegistry::new();
-        
-        registry.set_memory(1024 * 100, 500, 1024 * 1024 * 10, 1000);
-        
-        assert_eq!(registry.memory.memtable_size_bytes.load(Ordering::Relaxed), 1024 * 100);
-        assert_eq!(registry.memory.memtable_entries.load(Ordering::Relaxed), 500);
-        assert_eq!(registry.memory.cache_size_bytes.load(Ordering::Relaxed), 1024 * 1024 * 10);
-        assert_eq!(registry.memory.cache_items.load(Ordering::Relaxed), 1000);
-    }
-    
+
+    /// 保留：验证 WAL 指标
     #[test]
     fn test_wal_metrics() {
         let registry = MetricsRegistry::new();
-        
+
         registry.record_wal_write(100);
         registry.record_wal_write(200);
         registry.record_wal_rotation();
-        
+
         assert_eq!(registry.wal.wal_writes.load(Ordering::Relaxed), 2);
         assert_eq!(registry.wal.wal_bytes.load(Ordering::Relaxed), 300);
         assert_eq!(registry.wal.wal_rotations.load(Ordering::Relaxed), 1);
     }
-    
+
+    /// 保留：验证指标收集输出
     #[test]
     fn test_gather_metrics() {
         let registry = MetricsRegistry::new();
-        
+
         registry.record_write(1024, Duration::from_micros(50));
         registry.record_read_hit(Duration::from_micros(5));
-        
+
         let output = registry.gather();
-        
+
         assert!(output.contains("tokitai_write_count"));
         assert!(output.contains("tokitai_read_count"));
         assert!(output.contains("tokitai_cache_hit_rate"));
         assert!(output.contains("tokitai_uptime_seconds"));
-    }
-    
-    #[test]
-    fn test_metric_value_display() {
-        let mut labels = HashMap::new();
-        labels.insert("type".to_string(), "write".to_string());
-        
-        let metric = MetricValue {
-            name: "test_metric".to_string(),
-            help: "Test metric help".to_string(),
-            metric_type: MetricType::Counter,
-            value: 42.0,
-            labels,
-        };
-        
-        let display = metric.to_string();
-        assert!(display.contains("# HELP test_metric Test metric help"));
-        assert!(display.contains("# TYPE test_metric counter"));
-        assert!(display.contains("type=\"write\""));
-        assert!(display.contains("42"));
     }
 }

@@ -208,12 +208,12 @@ impl CompactionManager {
     /// Group segments by level for leveled compaction
     fn group_segments_by_level<'a>(&self, segments: &'a [SegmentStats]) -> std::collections::BTreeMap<usize, Vec<&'a SegmentStats>> {
         let mut levels: std::collections::BTreeMap<usize, Vec<&'a SegmentStats>> = std::collections::BTreeMap::new();
-        
+
         for segment in segments {
             let level = self.get_segment_level(segment);
-            levels.entry(level).or_insert_with(Vec::new).push(segment);
+            levels.entry(level).or_default().push(segment);
         }
-        
+
         levels
     }
 

@@ -227,7 +227,7 @@ mod tests {
     fn test_config_default() {
         let config = AdaptivePreallocatorConfig::default();
         assert!(config.enabled);
-        assert_eq!(config.min_preallocate_bytes, 1 * 1024 * 1024);
+        assert_eq!(config.min_preallocate_bytes, 1024 * 1024);
         assert_eq!(config.max_preallocate_bytes, 64 * 1024 * 1024);
         assert_eq!(config.initial_preallocate_bytes, 16 * 1024 * 1024);
         assert!((0.0..=1.0).contains(&config.ewma_alpha));
@@ -252,11 +252,12 @@ mod tests {
 
     #[test]
     fn test_adaptive_preallocator_adaptation() {
-        let mut config = AdaptivePreallocatorConfig::default();
-        config.history_size = 5;
-        config.ewma_alpha = 0.5; // More responsive for testing
-        config.initial_preallocate_bytes = 4 * 1024 * 1024; // Start with 4MB
-        
+        let config = AdaptivePreallocatorConfig {
+            history_size: 5,
+            ewma_alpha: 0.5,
+            initial_preallocate_bytes: 4 * 1024 * 1024,
+            ..Default::default()
+        };
         let preallocator = AdaptivePreallocator::new(config);
 
         // Simulate segments with increasing sizes
@@ -269,7 +270,7 @@ mod tests {
         ];
 
         let initial_size = preallocator.next_preallocate_size();
-        
+
         for &size in &segment_sizes {
             // Record segment created with current size
             let prealloc_size = preallocator.next_preallocate_size();
@@ -293,11 +294,12 @@ mod tests {
 
     #[test]
     fn test_adaptive_preallocator_min_max_bounds() {
-        let mut config = AdaptivePreallocatorConfig::default();
-        config.min_preallocate_bytes = 2 * 1024 * 1024;
-        config.max_preallocate_bytes = 8 * 1024 * 1024;
-        config.history_size = 3;
-        
+        let config = AdaptivePreallocatorConfig {
+            min_preallocate_bytes: 2 * 1024 * 1024,
+            max_preallocate_bytes: 8 * 1024 * 1024,
+            history_size: 3,
+            ..Default::default()
+        };
         let preallocator = AdaptivePreallocator::new(config);
 
         // Simulate very small segments
@@ -328,9 +330,11 @@ mod tests {
 
     #[test]
     fn test_adaptive_preallocator_disabled() {
-        let mut config = AdaptivePreallocatorConfig::default();
-        config.enabled = false;
-        
+        let config = AdaptivePreallocatorConfig {
+            enabled: false,
+            ..Default::default()
+        };
+
         let preallocator = AdaptivePreallocator::new(config);
 
         // Should always return initial size
@@ -375,10 +379,12 @@ mod tests {
 
     #[test]
     fn test_adaptive_preallocator_ewma_smoothing() {
-        let mut config = AdaptivePreallocatorConfig::default();
-        config.history_size = 10;
-        config.ewma_alpha = 0.2; // Low alpha = more smoothing
-        
+        let config = AdaptivePreallocatorConfig {
+            history_size: 10,
+            ewma_alpha: 0.2,
+            ..Default::default()
+        };
+
         let preallocator = AdaptivePreallocator::new(config);
 
         // Simulate variable segment sizes

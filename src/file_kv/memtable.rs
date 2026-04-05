@@ -522,7 +522,7 @@ mod tests {
         // Insert to 50%
         mt.insert("key1".to_string(), &[0u8; 500]);
         let level = mt.backpressure_level();
-        assert!(level >= 0.4 && level <= 0.6, "Expected ~0.5, got {}", level);
+        assert!((0.4..=0.6).contains(&level), "Expected ~0.5, got {}", level);
 
         // Insert to exceed limit
         mt.insert("key2".to_string(), &[0u8; 600]);

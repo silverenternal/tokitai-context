@@ -1,8 +1,27 @@
 # Tokitai-Context 文档索引
 
-**最后更新**: 2026-04-03  
-**文档总数**: 58  
-**总行数**: ~25,000
+**最后更新**: 2026-04-04
+**文档总数**: 51 (主目录) + 26 (归档) = 77
+**总行数**: ~18,000 (主目录) + ~8,000 (归档) = ~26,000
+
+---
+
+## 📢 文档整理公告 (2026-04-04)
+
+本次整理将冗余文档移至 `doc/archive/` 目录，保留核心文档 51 个。
+
+**归档文档类型**:
+- ❌ 重复的总结报告 (P0_COMPLETION_SUMMARY.md 等 5 个)
+- ❌ 过时的进度报告 (P1_PROGRESS_REPORT.md 等)
+- ❌ 临时实现报告 (IMPLEMENTATION_REPORT.md 等)
+- ❌ 已被替代的修复文档 (P0-001_BLOCK_CACHE_OPTIMIZATION.md 等)
+
+**保留文档**:
+- ✅ 核心架构文档
+- ✅ 最新性能报告 (PERFORMANCE_BENCHMARKS_2026.md, PERFORMANCE_REPORT.md)
+- ✅ 用户指南和快速开始
+- ✅ 特性实现文档 (P1_013_WAL_ROTATION.md 等)
+- ✅ 技术审计报告 (UNSAFE_BLOCKS_AUDIT.md 等)
 
 ---
 
@@ -10,36 +29,37 @@
 
 | 文档 | 描述 | 行数 | 推荐阅读 |
 |------|------|------|----------|
-| [README.md](../README.md) | 项目主文档 | ~400 | ⭐⭐⭐ |
+| [README.md](../README.md) | 项目主文档 | ~440 | ⭐⭐⭐ |
 | [doc/README.md](README.md) | 文档中心导航 | ~400 | ⭐⭐⭐ |
 | [doc/ARCHITECTURE.md](ARCHITECTURE.md) | 系统架构 | ~800 | ⭐⭐⭐ |
 | [doc/QUICKSTART.md](QUICKSTART.md) | 快速开始 | ~300 | ⭐⭐⭐ |
 | [doc/PAPER_CONTRIBUTIONS.md](PAPER_CONTRIBUTIONS.md) | 论文贡献点 | ~1200 | ⭐⭐⭐ |
-| [doc/PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | 性能报告 | ~800 | ⭐⭐⭐ |
+| [doc/PERFORMANCE_BENCHMARKS_2026.md](PERFORMANCE_BENCHMARKS_2026.md) | **综合性能基准报告** | ~400 | ⭐⭐⭐ 新增 |
+| [doc/PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | 性能优化报告 | ~380 | ⭐⭐⭐ |
 | [doc/IMPLEMENTATION_SUMMARY_v2.md](IMPLEMENTATION_SUMMARY_v2.md) | 实现总结 | ~1000 | ⭐⭐⭐ |
 
 ---
 
 ## 📚 文档分类
 
-### 架构与设计 (6 个)
+### 架构与设计 (5 个)
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 完整系统架构和数据流 | ✅ 新增 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 完整系统架构和数据流 | ✅ |
 | [PARALLEL_CONTEXT_IMPLEMENTATION.md](PARALLEL_CONTEXT_IMPLEMENTATION.md) | 平行上下文实现报告 | ✅ |
 | [CONTEXT_STORAGE.md](CONTEXT_STORAGE.md) | 上下文存储机制 | ✅ |
 | [MECHANISMS.md](MECHANISMS.md) | 核心算法和机制 | ✅ |
-| [IMPLEMENTATION_REPORT.md](IMPLEMENTATION_REPORT.md) | 实现细节报告 | ✅ |
-| [IMPLEMENTATION_SUMMARY_v2.md](IMPLEMENTATION_SUMMARY_v2.md) | 实现总结 (v2) | ✅ 新增 |
+| [IMPLEMENTATION_SUMMARY_v2.md](IMPLEMENTATION_SUMMARY_v2.md) | 实现总结 (v2) | ✅ |
 
 ### 论文与性能 (3 个)
 
 | 文档 | 描述 | 状态 |
 |------|------|------|
-| [PAPER_CONTRIBUTIONS.md](PAPER_CONTRIBUTIONS.md) | 论文贡献点和实验设计 | ✅ 新增 |
-| [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | 完整性能基准测试 | ✅ 新增 |
-| [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) | 基准测试结果 | ✅ |
+| [PAPER_CONTRIBUTIONS.md](PAPER_CONTRIBUTIONS.md) | 论文贡献点和实验设计 | ✅ |
+| [PERFORMANCE_BENCHMARKS_2026.md](PERFORMANCE_BENCHMARKS_2026.md) | **综合性能基准报告 (2026-04-04)** | ✅ |
+| [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) | 完整性能优化报告 | ✅ |
+| [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) | FileKV 基准测试结果 | ✅ |
 
 ### 存储引擎 (8 个)
 
@@ -174,6 +194,23 @@
 
 ## 📝 更新日志
 
+### 2026-04-04 (v3.0) - 性能基准更新
+
+**新增文档**:
+- ✅ [PERFORMANCE_BENCHMARKS_2026.md](PERFORMANCE_BENCHMARKS_2026.md) - 综合性能基准报告 (FileKV + diff3 Merge)
+
+**更新文档**:
+- ✅ [README.md](../README.md) - 添加 diff3 merge 性能数据
+- ✅ [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) - 更新 diff3 merge 基准测试
+- ✅ [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md) - 添加 diff3 merge 性能数据
+- ✅ [P1_001_PERFORMANCE_STATUS.md](P1_001_PERFORMANCE_STATUS.md) - 标记为已完成
+- ✅ [DOC_INDEX.md](DOC_INDEX.md) - 更新文档索引
+
+**主要更新内容**:
+- diff3 merge 算法性能：从 >60s 超时优化到 ~8.2ms (1000 行)
+- FileKV 单次写入：92 ns (54x 超越目标)
+- 所有 502 个测试通过，零编译警告
+
 ### 2026-04-03 (v2.0)
 
 **新增文档**:
@@ -201,6 +238,50 @@
 
 ---
 
-**最后更新**: 2026-04-03  
-**维护者**: Tokitai Team  
+## 🗄️ 归档文档
+
+以下文档已移至 `doc/archive/` 目录，保留用于历史参考，但不再维护。
+
+### 重复的总结报告 (5 个)
+- `P0_COMPLETION_SUMMARY.md` - 已由 IMPLEMENTATION_SUMMARY_v2.md 替代
+- `P1_COMPLETION_SUMMARY.md` - 已由 IMPLEMENTATION_SUMMARY_v2.md 替代
+- `P2_COMPLETION_SUMMARY.md` - 已由 IMPLEMENTATION_SUMMARY_v2.md 替代
+- `P3_COMPLETION_SUMMARY.md` - 已由 IMPLEMENTATION_SUMMARY_v2.md 替代
+- `COMPLETION_REPORT.md` - 重复的完成报告
+
+### 过时的进度报告 (3 个)
+- `P1_PROGRESS_REPORT.md` - 进度报告，已过时
+- `IMPROVEMENTS.md` - 改进记录，已整合
+- `DOCUMENT_UPDATE_SUMMARY.md` - 临时更新总结
+
+### 临时实现报告 (6 个)
+- `IMPLEMENTATION_REPORT.md` - 已由 IMPLEMENTATION_SUMMARY_v2.md 替代
+- `OPTIMIZATION_IMPLEMENTATION_REPORT.md` - 已整合到性能报告
+- `OPTIMIZATION_SUMMARY.md` - 已整合到性能报告
+- `PERFORMANCE_OPTIMIZATION_REPORT.md` - 已由 PERFORMANCE_REPORT.md 替代
+- `OPTIMIZATION_PLAN_STATUS.md` - 计划状态，已过时
+- `FILEKV_OPTIMIZATION_PLAN.json` - 优化计划，已完成
+
+### 已被替代的修复文档 (5 个)
+- `P0_001_002_CACHE_BLOOM_FIXES.md` - 修复已完成，整合到 P0_P1_FIXES_SUMMARY_v2.md
+- `P0_006_FACADE_CONSISTENCY_FIX.md` - 修复已完成
+- `P0-001_BLOCK_CACHE_OPTIMIZATION.md` - 已整合到 P0_P1_FIXES_SUMMARY_v2.md
+- `P0-002_BLOOM_FILTER_FIX.md` - 已整合到 P0_P1_FIXES_SUMMARY_v2.md
+- `P0-006_FACADE_CONSISTENCY_VERIFIED.md` - 验证报告，已整合
+
+### 其他归档文档 (7 个)
+- `P1_001_PERFORMANCE_FIX.md` - 性能修复，已整合到 P1_001_PERFORMANCE_STATUS.md
+- `P1_010_015_IMPLEMENTATION.md` - 实现文档，已整合
+- `P2-009_INCREMENTAL_CHECKPOINT.md` - 重复文档
+- `P2-013_AUDIT_LOGGING.md` - 重复文档
+- `DOCUMENTATION_SUMMARY.md` - 文档总结，已过时
+- `IMPLEMENTATION_SUMMARY.md` - 已由 v2 版本替代
+- `DOCUMENT_UPDATE_2026_04_04.md` - 临时更新文档
+
+**归档文档总数**: 26 个
+
+---
+
+**最后更新**: 2026-04-04
+**维护者**: Tokitai Team
 **许可证**: MIT OR Apache-2.0

@@ -1,6 +1,6 @@
 # 🚀 快速启动指南
 
-> **最后更新**: 2026-03-25  
+> **最后更新**: 2026-04-04
 > **目标**: 5 分钟内启动并运行
 
 ---
@@ -11,6 +11,7 @@
 
 | 提供商 | 获取地址 | 免费额度 |
 |--------|---------|---------|
+| **阿里云百炼 (Coding Plan)** | https://bailian.console.aliyun.com | ✅ 有 |
 | **Ollama** | https://ollama.com | ✅ 有 |
 | **OpenAI** | https://platform.openai.com | ❌ 无 |
 | **Anthropic** | https://console.anthropic.com | ❌ 无 |
@@ -22,39 +23,48 @@
 
 ## 第二步：配置环境变量
 
+### 方式一：使用 .env 文件（推荐）
+
 ```bash
 # 复制模板
 cp .env.example .env
 
-# 编辑 .env 文件
-# 方式一：单提供商配置（推荐新手）
-AI_API_KEY="your-api-key-here"
-AI_API_URL="https://api.provider.com/v1/chat/completions"
-AI_MODEL="model-name"
-
-# 方式二：多提供商配置（高级）
-# 详见下方「多模型支持」章节
+# 编辑 .env 文件，填入你的 API Key
 ```
 
-### 快速配置示例
-
-**Ollama（推荐）**:
+**`.env` 文件示例**：
 ```bash
-export AI_API_KEY="ollama-xxxxxxxxxxxxxxxx"
-export AI_API_URL="https://ollama.com/v1/chat/completions"
-export AI_MODEL="qwen3.5:397b"
+# 阿里云百炼 AI 编码套餐
+ALIYUN_CODING_PLAN_API_KEY="your-coding-plan-api-key"
+# 或
+DASHSCOPE_API_KEY="your-dashscope-api-key"
+
+# OpenAI
+OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxx"
+
+# Anthropic
+ANTHROPIC_API_KEY="sk-ant-xxxxxxxxxxxxxxxx"
+
+# Ollama（本地部署）
+OLLAMA_BASE_URL="http://localhost:11434"
+OLLAMA_MODEL="llama3.1"
 ```
 
-**OpenAI**:
-```bash
-export AI_API_KEY="sk-xxxxxxxxxxxxxxxx"
-export AI_MODEL="gpt-4o"
-```
+### 方式二：使用环境变量
 
-**Anthropic**:
 ```bash
-export AI_API_KEY="sk-ant-xxxxxxxxxxxxxxxx"
-export AI_MODEL="claude-3-5-sonnet-20241022"
+# 阿里云百炼
+export ALIYUN_CODING_PLAN_API_KEY="your-api-key"
+
+# OpenAI
+export OPENAI_API_KEY="sk-xxxxxxxxxxxxxxxx"
+
+# Anthropic
+export ANTHROPIC_API_KEY="sk-ant-xxxxxxxxxxxxxxxx"
+
+# Ollama
+export OLLAMA_BASE_URL="http://localhost:11434"
+export OLLAMA_MODEL="llama3.1"
 ```
 
 ---

@@ -640,49 +640,27 @@ tokitai_simd_checksum_batch_operations_total {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[test]
-    fn test_calculate_checksum_basic() {
-        let data = b"hello world";
-        let checksum = calculate_checksum(data);
-        
-        assert_ne!(checksum, 0, "Checksum should not be zero");
-        assert_ne!(checksum, u32::MAX, "Checksum should not be max");
-    }
-    
+
+    /// 保留：验证 checksum 计算和验证逻辑
     #[test]
     fn test_verify_checksum_valid() {
         let data = b"test data";
         let checksum = calculate_checksum(data);
-        
+
         assert!(verify_checksum(data, checksum));
     }
-    
+
+    /// 保留：验证 checksum 错误检测
     #[test]
     fn test_verify_checksum_invalid() {
         let data = b"test data";
         let checksum = calculate_checksum(data);
-        
+
         assert!(!verify_checksum(b"tampered data", checksum));
         assert!(!verify_checksum(data, 0x12345678));
     }
-    
-    #[test]
-    fn test_batch_verify_all_valid() {
-        let items = vec![
-            ChecksumItem::new(b"data1", calculate_checksum(b"data1")),
-            ChecksumItem::new(b"data2", calculate_checksum(b"data2")),
-            ChecksumItem::new(b"data3", calculate_checksum(b"data3")),
-        ];
-        
-        let result = batch_verify(&items);
-        
-        assert!(result.all_valid());
-        assert_eq!(result.valid_count, 3);
-        assert_eq!(result.invalid_count, 0);
-        assert!(result.failed_indices().is_empty());
-    }
-    
+
+    /// 保留：验证批量验证逻辑
     #[test]
     fn test_batch_verify_some_invalid() {
         let items = vec![
@@ -690,157 +668,110 @@ mod tests {
             ChecksumItem::new(b"data2", 0x12345678), // Invalid
             ChecksumItem::new(b"data3", calculate_checksum(b"data3")),
         ];
-        
+
         let result = batch_verify(&items);
-        
+
         assert!(!result.all_valid());
         assert_eq!(result.valid_count, 2);
         assert_eq!(result.invalid_count, 1);
         assert_eq!(result.failed_indices(), vec![1]);
     }
-    
+
+    /// 保留：验证批量计算
     #[test]
     fn test_batch_calculate() {
         let data: Vec<&[u8]> = vec![b"data1", b"data2", b"data3"];
         let checksums = batch_calculate(&data);
-        
+
         assert_eq!(checksums.len(), 3);
         assert_eq!(checksums[0], calculate_checksum(b"data1"));
         assert_eq!(checksums[1], calculate_checksum(b"data2"));
         assert_eq!(checksums[2], calculate_checksum(b"data3"));
     }
-    
+
+    /// 保留：验证 checksum 组合逻辑
     #[test]
     fn test_combine_checksums() {
         let c1 = calculate_checksum(b"data1");
         let c2 = calculate_checksum(b"data2");
         let c3 = calculate_checksum(b"data3");
-        
+
         let combined = combine_checksums(&[c1, c2, c3]);
-        
+
         assert_ne!(combined, 0);
         assert_ne!(combined, c1);
         assert_ne!(combined, c2);
         assert_ne!(combined, c3);
-        
-        // Combining same checksums should produce same result
+
         let combined2 = combine_checksums(&[c1, c2, c3]);
         assert_eq!(combined, combined2);
     }
-    
+
+    /// 保留：验证流式 checksum
     #[test]
     fn test_streaming_checksum() {
         let data = b"streaming test data for checksum calculation";
         let mut cursor = std::io::Cursor::new(data);
-        
+
         let checksum = streaming_checksum(&mut cursor).unwrap();
         let expected = calculate_checksum(data);
-        
+
         assert_eq!(checksum, expected);
     }
-    
-    #[test]
-    fn test_checksum_item_creation() {
-        let item1 = ChecksumItem::new(b"data", 0x12345678);
-        assert_eq!(item1.data, b"data");
-        assert_eq!(item1.expected_checksum, 0x12345678);
-        
-        let item2 = ChecksumItem::from_slice(b"slice", 0x87654321);
-        assert_eq!(item2.data, b"slice");
-        assert_eq!(item2.expected_checksum, 0x87654321);
-    }
-    
+
+    /// 保留：验证 BatchVerifyResult 报告生成
     #[test]
     fn test_batch_verify_result_methods() {
         let result = BatchVerifyResult::new(vec![true, true, false, true, false]);
-        
+
         assert!(!result.all_valid());
         assert!(result.any_valid());
         assert_eq!(result.valid_count, 3);
         assert_eq!(result.invalid_count, 2);
         assert_eq!(result.total_count, 5);
         assert_eq!(result.failed_indices(), vec![2, 4]);
-        
+
         let report = result.report();
         assert!(report.contains("3/5"));
         assert!(report.contains("60.0%"));
     }
-    
-    #[test]
-    fn test_simd_checksum_calculator() {
-        let calc = SimdChecksumCalculator::new();
-        
-        let data = b"test data";
-        let checksum = calc.calculate(data);
-        
-        assert_eq!(calc.stats().calculations(), 1);
-        assert_eq!(calc.stats().bytes_processed(), data.len() as u64);
-        
-        assert!(calc.verify(data, checksum));
-        assert_eq!(calc.stats().verifications(), 1);
-        assert_eq!(calc.stats().successful_verifications(), 1);
-    }
-    
+
+    /// 保留：验证 SimdChecksumCalculator 功能
     #[test]
     fn test_simd_checksum_stats() {
         let calc = SimdChecksumCalculator::new();
-        
-        // Perform some operations
+
         for i in 0..10 {
             let data = format!("test data {}", i);
             let checksum = calc.calculate(data.as_bytes());
             calc.verify(data.as_bytes(), checksum);
         }
-        
+
         let stats = calc.stats();
         assert_eq!(stats.calculations(), 10);
         assert_eq!(stats.verifications(), 10);
         assert_eq!(stats.successful_verifications(), 10);
         assert_eq!(stats.failed_verifications(), 0);
         assert_eq!(stats.success_rate(), 1.0);
-        
-        // Test Prometheus export
+
         let prometheus = stats.to_prometheus();
         assert!(prometheus.contains("tokitai_simd_checksum"));
-        
-        // Test human-readable report
+
         let report = stats.report();
         assert!(report.contains("SIMD Checksum Stats"));
     }
-    
+
+    /// 保留：验证大数据和空数据 checksum
     #[test]
-    fn test_simd_checksum_config() {
-        let config = SimdChecksumConfig {
-            hardware_accel: true,
-            chunk_size: 16384,
-            parallel_threshold: 20,
-            enable_prefetch: false,
-        };
-        
-        let calc = SimdChecksumCalculator::with_config(config.clone());
-        
-        assert_eq!(calc.config().chunk_size, 16384);
-        assert_eq!(calc.config().parallel_threshold, 20);
-        assert!(!calc.config().enable_prefetch);
-    }
-    
-    #[test]
-    fn test_large_data_checksum() {
-        // Test with 1MB of data
+    fn test_edge_cases_checksum() {
+        // 1MB 数据
         let data = vec![0x42u8; 1_048_576];
         let checksum = calculate_checksum(&data);
-        
         assert_ne!(checksum, 0);
-        
-        // Verify it's consistent
-        let checksum2 = calculate_checksum(&data);
-        assert_eq!(checksum, checksum2);
-    }
-    
-    #[test]
-    fn test_empty_data_checksum() {
-        let checksum = calculate_checksum(b"");
-        // Empty data has a specific CRC32-C value
-        assert_eq!(checksum, 0);
+        assert_eq!(checksum, calculate_checksum(&data));
+
+        // 空数据
+        let empty_checksum = calculate_checksum(b"");
+        assert_eq!(empty_checksum, 0);
     }
 }

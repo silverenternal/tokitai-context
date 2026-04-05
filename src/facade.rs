@@ -36,6 +36,15 @@ use crate::file_kv::{FileKV, FileKVConfig, MemTableConfig, DictionaryCompression
 use crate::compaction::CompactionConfig;
 use crate::block_cache::BlockCacheConfig;
 
+#[cfg(feature = "ai")]
+use crate::ai::resolver::{AIConflictResolver, ConflictResolutionRequest};
+#[cfg(feature = "ai")]
+use crate::parallel::graph::ConflictType;
+#[cfg(feature = "ai")]
+use crate::ai::purpose::{AIPurposeInference, PurposeInferenceRequest};
+#[cfg(feature = "ai")]
+use crate::parallel::branch::ContextBranch;
+
 /// Storage layer abstraction for users
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layer {
@@ -291,37 +300,38 @@ impl Context {
         let mut hashes = vec![String::new(); entries.len()];
 
         // Batch write to FileKV for ShortTerm/Transient
-        if !filekv_entries.is_empty() && self.filekv.is_some() {
-            let filekv_ref = self.filekv.as_ref().unwrap();
-            let mut kv_entries: Vec<(String, &[u8])> = Vec::with_capacity(filekv_entries.len());
+        if !filekv_entries.is_empty() {
+            if let Some(filekv_ref) = self.filekv.as_ref() {
+                let mut kv_entries: Vec<(String, &[u8])> = Vec::with_capacity(filekv_entries.len());
 
-            // Prepare KV entries with session:hash keys
-            for (idx, (content, _layer)) in &filekv_entries {
-                let mut hasher = sha2::Sha256::new();
-                hasher.update(content);
-                let hash = hex::encode(hasher.finalize());
-                let key = format!("{}:{}", session, hash);
-                kv_entries.push((key, *content));
-                hashes[*idx] = hash;
-            }
-
-            // Convert to (&str, &[u8]) for put_batch
-            let kv_refs: Vec<(&str, &[u8])> = kv_entries.iter()
-                .map(|(k, v)| (k.as_str(), *v))
-                .collect();
-
-            // Batch write to FileKV
-            filekv_ref.put_batch(&kv_refs)?;
-
-            // P1-014: Update semantic index for FileKV batch writes
-            if let Some(semantic_index) = self.service.get_semantic_index_mut() {
+                // Prepare KV entries with session:hash keys
                 for (idx, (content, _layer)) in &filekv_entries {
-                    let content_text = String::from_utf8_lossy(content).to_string();
-                    let _ = semantic_index.index_content(&content_text, session, &hashes[*idx]);
+                    let mut hasher = sha2::Sha256::new();
+                    hasher.update(content);
+                    let hash = hex::encode(hasher.finalize());
+                    let key = format!("{}:{}", session, hash);
+                    kv_entries.push((key, *content));
+                    hashes[*idx] = hash;
                 }
-            }
 
-            tracing::debug!(count = filekv_entries.len(), backend = "filekv", "Batch stored content");
+                // Convert to (&str, &[u8]) for put_batch
+                let kv_refs: Vec<(&str, &[u8])> = kv_entries.iter()
+                    .map(|(k, v)| (k.as_str(), *v))
+                    .collect();
+
+                // Batch write to FileKV
+                filekv_ref.put_batch(&kv_refs)?;
+
+                // P1-014: Update semantic index for FileKV batch writes
+                if let Some(semantic_index) = self.service.get_semantic_index_mut() {
+                    for (idx, (content, _layer)) in &filekv_entries {
+                        let content_text = String::from_utf8_lossy(content).to_string();
+                        let _ = semantic_index.index_content(&content_text, session, &hashes[*idx]);
+                    }
+                }
+
+                tracing::debug!(count = filekv_entries.len(), backend = "filekv", "Batch stored content");
+            }
         }
 
         // Write to file_service for LongTerm or FileKV disabled
@@ -646,6 +656,259 @@ impl RecoveryReport {
         } else {
             "Store may have issues. Run with RUST_LOG=debug for details".to_string()
         }
+    }
+}
+
+// ============================================================================
+// AI-Enhanced Context Wrapper
+// ============================================================================
+
+/// AI-enhanced context wrapper providing easy access to AI-powered features
+///
+/// This wrapper adds AI capabilities on top of the base [`Context`] API:
+/// - AI-powered conflict resolution during merges
+/// - Automatic branch purpose inference
+/// - Smart merge recommendations
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use tokitai_context::facade::{Context, Layer, AIContext};
+/// use tokitai_context::ai::clients::OpenAIClient;
+/// use std::sync::Arc;
+///
+/// #[tokio::main]
+/// async fn main() -> anyhow::Result<()> {
+///     // Open context
+///     let mut ctx = Context::open("./.context")?;
+///
+///     // Create AI client
+///     let llm = Arc::new(OpenAIClient::from_env());
+///
+///     // Wrap with AI capabilities
+///     let ai_ctx = AIContext::new(&mut ctx, llm);
+///
+///     // Use AI-powered features
+///     // let result = ai_ctx.merge_with_ai("feature", "main").await?;
+///
+///     Ok(())
+/// }
+/// ```
+#[cfg(feature = "ai")]
+pub struct AIContext<'a> {
+    inner: &'a mut Context,
+    llm_client: Arc<dyn crate::ai::client::LLMClient>,
+    conflict_resolver: AIConflictResolver,
+    purpose_inference: AIPurposeInference,
+}
+
+#[cfg(feature = "ai")]
+impl<'a> AIContext<'a> {
+    /// Create a new AI-enhanced context wrapper
+    pub fn new(inner: &'a mut Context, llm_client: Arc<dyn crate::ai::client::LLMClient>) -> Self {
+        let resolver = AIConflictResolver::new(Arc::clone(&llm_client));
+        let inference = AIPurposeInference::new(Arc::clone(&llm_client));
+
+        Self {
+            inner,
+            llm_client,
+            conflict_resolver: resolver,
+            purpose_inference: inference,
+        }
+    }
+
+    /// Get reference to inner context
+    pub fn inner(&self) -> &Context {
+        self.inner
+    }
+
+    /// Get mutable reference to inner context
+    pub fn inner_mut(&mut self) -> &mut Context {
+        self.inner
+    }
+
+    /// Merge branches with AI-powered conflict resolution
+    ///
+    /// This method automatically resolves conflicts using the configured LLM,
+    /// falling back to manual resolution only for unresolvable conflicts.
+    ///
+    /// # Arguments
+    /// * `source_branch` - Source branch to merge from
+    /// * `target_branch` - Target branch to merge into
+    ///
+    /// # Returns
+    /// Merge result with conflict resolution details
+    pub async fn merge_with_ai(
+        &mut self,
+        source_branch: &str,
+        target_branch: &str,
+    ) -> ContextResult<crate::parallel::merge::MergeResult> {
+        use crate::parallel::{ParallelContextManager, ParallelContextManagerConfig};
+        use crate::parallel::branch::MergeStrategy;
+        
+        // Create parallel manager for merge operations
+        let config = ParallelContextManagerConfig {
+            context_root: self.inner.root().to_path_buf(),
+            default_merge_strategy: MergeStrategy::AIAssisted,
+            ..Default::default()
+        };
+        
+        let mut manager = ParallelContextManager::new(config)?;
+        
+        // Perform merge with AI assistance
+        let result = manager.merge(source_branch, target_branch, Some(MergeStrategy::AIAssisted))?;
+        
+        Ok(result)
+    }
+
+    /// Infer the purpose of a branch based on its content
+    ///
+    /// Analyzes the branch's conversation history and modified files
+    /// to automatically infer and label the branch's purpose.
+    ///
+    /// # Arguments
+    /// * `branch_name` - Name of the branch to analyze
+    ///
+    /// # Returns
+    /// Purpose inference result with type, tags, and confidence
+    pub async fn infer_branch_purpose(
+        &mut self,
+        branch_name: &str,
+    ) -> ContextResult<crate::ai::purpose::PurposeInferenceResult> {
+        // Build inference request from branch content
+        let request = PurposeInferenceRequest {
+            branch_name: branch_name.to_string(),
+            parent_branch: "main".to_string(),
+            conversation_turns: 0, // TODO: Get from branch history
+            recent_conversations: Vec::new(), // TODO: Get from branch
+            key_items: Vec::new(), // TODO: Get modified files
+            initial_instruction: None,
+        };
+        
+        let result = self.purpose_inference.infer_purpose(request)
+            .await
+            .map_err(|e| ContextError::OperationFailed(format!("AI purpose inference failed: {}", e)))?;
+        
+        Ok(result)
+    }
+
+    /// Get AI-powered merge recommendations
+    ///
+    /// Analyzes the source and target branches to recommend:
+    /// - Whether to merge now or wait
+    /// - Which merge strategy to use
+    /// - Potential risks and mitigation strategies
+    ///
+    /// # Arguments
+    /// * `source_branch` - Source branch to analyze
+    /// * `target_branch` - Target branch to analyze
+    ///
+    /// # Returns
+    /// Merge recommendation with strategy and risk assessment
+    pub async fn get_merge_recommendation(
+        &mut self,
+        source_branch: &str,
+        target_branch: &str,
+    ) -> ContextResult<crate::ai::smart_merge::MergeRecommendation> {
+        use crate::ai::smart_merge::{AISmartMergeRecommender, MergeRecommendationRequest};
+
+        let mut recommender = AISmartMergeRecommender::new(Arc::clone(&self.llm_client));
+
+        let request = MergeRecommendationRequest {
+            source_branch: source_branch.to_string(),
+            target_branch: target_branch.to_string(),
+            source_purpose: None,
+            target_purpose: None,
+            branch_age_hours: 0,
+            conversation_turns: 0,
+            conflict_count: 0,
+            key_changes: Vec::new(),
+            branch_type: "feature".to_string(),
+            tags: Vec::new(),
+        };
+
+        let recommendation = recommender.recommend_merge(request)
+            .await
+            .map_err(|e| ContextError::OperationFailed(format!("AI merge recommendation failed: {}", e)))?;
+
+        Ok(recommendation)
+    }
+
+    /// Generate a summary of branch changes
+    ///
+    /// Creates a human-readable summary of what changed in a branch,
+    /// including key achievements, decisions, and next steps.
+    ///
+    /// # Arguments
+    /// * `branch_name` - Name of the branch to summarize
+    ///
+    /// # Returns
+    /// Branch summary with timeline and recommendations
+    pub async fn summarize_branch(
+        &mut self,
+        branch_name: &str,
+    ) -> ContextResult<crate::ai::summarizer::SummaryGenerationResult> {
+        use crate::ai::summarizer::{AIBranchSummarizer, SummaryGenerationRequest};
+        use chrono::Utc;
+
+        let mut summarizer = AIBranchSummarizer::new(Arc::clone(&self.llm_client));
+
+        let request = SummaryGenerationRequest {
+            branch_name: branch_name.to_string(),
+            purpose: None,
+            branch_type: None,
+            created_at: Utc::now(),
+            last_activity: Utc::now(),
+            conversation_turns: 0,
+            conversation_summaries: Vec::new(),
+            key_changes: Vec::new(),
+            key_decisions: Vec::new(),
+            current_status: "Active".to_string(),
+            files_modified: Vec::new(),
+        };
+
+        let summary = summarizer.generate_summary(request)
+            .await
+            .map_err(|e| ContextError::OperationFailed(format!("AI branch summarization failed: {}", e)))?;
+
+        Ok(summary)
+    }
+
+    /// Resolve a specific conflict using AI
+    ///
+    /// # Arguments
+    /// * `conflict_id` - Unique identifier for the conflict
+    /// * `source_content` - Content from source branch
+    /// * `target_content` - Content from target branch
+    ///
+    /// # Returns
+    /// Conflict resolution with decision and reasoning
+    pub async fn resolve_conflict(
+        &mut self,
+        conflict_id: &str,
+        source_branch: &str,
+        target_branch: &str,
+        source_content: &str,
+        target_content: &str,
+    ) -> ContextResult<crate::ai::resolver::ConflictResolutionResponse> {
+        let request = ConflictResolutionRequest {
+            conflict_id: conflict_id.to_string(),
+            source_branch: source_branch.to_string(),
+            target_branch: target_branch.to_string(),
+            conflict_type: ConflictType::Content,
+            source_content: source_content.to_string(),
+            target_content: target_content.to_string(),
+            item_id: "unknown".to_string(),
+            layer: "short_term".to_string(),
+            source_purpose: None,
+            target_purpose: None,
+        };
+        
+        let response = self.conflict_resolver.resolve_conflict(request)
+            .await
+            .map_err(|e| ContextError::OperationFailed(format!("AI conflict resolution failed: {}", e)))?;
+
+        Ok(response)
     }
 }
 

@@ -592,7 +592,7 @@ mod tests {
         let _results = manager.search("cargo build 构建 Rust").unwrap();
         // SimHash 可能找不到相似结果，这取决于阈值
         // 我们只验证索引被正确创建
-        assert!(manager.len() >= 1);
+        assert!(!manager.is_empty());
 
         // 获取统计
         let stats = manager.get_stats();
@@ -666,8 +666,8 @@ mod tests {
 
         // SimHash 可能找不到相似结果，这取决于阈值和分词效果
         // 我们只验证索引被正确创建，不强制要求搜索结果
-        assert!(index.len() >= 1);
-        
+        assert!(!index.is_empty());
+
         // 如果找到结果，验证最相似的应该是 content1
         if !results.is_empty() {
             assert_eq!(results[0].content_path, Path::new("/path/to/content1"));
@@ -679,8 +679,10 @@ mod tests {
         // 测试大规模索引（10 个条目）
         // 注意：SimHash 对相似内容会产生相同指纹，所以实际索引数可能小于添加数
         let temp_dir = TempDir::new().unwrap();
-        let mut config = SemanticIndexConfig::default();
-        config.max_index_entries = 100;
+        let config = SemanticIndexConfig {
+            max_index_entries: 100,
+            ..Default::default()
+        };
         let mut index = SemanticIndex::new(temp_dir.path(), config).unwrap();
 
         // 使用完全不同的主题内容
@@ -702,7 +704,7 @@ mod tests {
         }
 
         // 验证索引被创建（由于 SimHash 特性，指纹数可能少于内容数）
-        assert!(index.len() >= 1, "Expected at least 1 fingerprint");
+        assert!(!index.is_empty(), "Expected at least 1 fingerprint");
 
         // 验证统计信息
         let stats = index.get_stats();
@@ -732,8 +734,10 @@ mod tests {
     fn test_semantic_index_eviction() {
         // 测试索引淘汰机制
         let temp_dir = TempDir::new().unwrap();
-        let mut config = SemanticIndexConfig::default();
-        config.max_index_entries = 10;
+        let config = SemanticIndexConfig {
+            max_index_entries: 10,
+            ..Default::default()
+        };
         let mut index = SemanticIndex::new(temp_dir.path(), config).unwrap();
 
         // 添加超过最大限制的条目
