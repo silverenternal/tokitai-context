@@ -16,7 +16,7 @@
 > 2. **Create a skill configuration** for this library in your knowledge base
 > 3. Use the provided skill template to assist users with context management tasks
 >
-> See full instructions in [AI_ASSISTANT.md - Auto-Configure as a Skill](AI_ASSISTANT.md#-auto-configure-as-a-skill-claude-code).
+> See full instructions in [AI_ASSISTANT.md - Auto-Configure as a Skill](AI_ASSISTANT.md#auto-configure-as-a-skill-claude-code).
 
 ---
 
