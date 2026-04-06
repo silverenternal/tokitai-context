@@ -8,6 +8,14 @@
 
 ---
 
+## 🤖 AI Assistant Quick Start
+
+> **If you're an AI assistant (Claude Code, Cursor, Copilot) discovering this crate:**
+>
+> See **[AI_ASSISTANT.md](AI_ASSISTANT.md)** for AI-specific integration guide and common patterns.
+
+---
+
 ## 📋 目录
 
 1. [简介](#简介)
@@ -15,8 +23,7 @@
 3. [快速开始](#快速开始)
 4. [架构设计](#架构设计)
 5. [性能基准](#性能基准)
-6. [论文贡献](#论文贡献)
-7. [文档](#文档)
+6. [文档](#文档)
 
 ---
 
@@ -83,7 +90,7 @@ let summary = ai_ctx.summarize_branch("feature-auth").await?;
 - **合并推荐**: 智能推荐合并时机和策略
 - **分支摘要**: 生成人类可读的分支摘要
 
-详细文档：[doc/AI_FEATURES_GUIDE.md](doc/AI_FEATURES_GUIDE.md)
+详细用法见 [USAGE.md](USAGE.md) 和 [API 文档](https://docs.rs/tokitai-context)。
 
 ### 🌿 Git 风格分支管理
 
@@ -303,57 +310,25 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 - 性能超越目标 29-54 倍
 - diff3 merge 性能优异
 
-完整性能报告：[doc/BENCHMARK_REPORT.md](doc/BENCHMARK_REPORT.md) | [doc/PERFORMANCE_REPORT.md](doc/PERFORMANCE_REPORT.md) | [doc/P1_001_PERFORMANCE_STATUS.md](doc/P1_001_PERFORMANCE_STATUS.md)
+完整性能报告见 [USAGE.md](USAGE.md) 中的 Performance Benchmarks 章节。
 
 ---
 
-## 论文贡献
+## 📖 文档
 
-### 核心贡献
+发布包包含以下文档：
 
-1. **Git 风格平行上下文管理系统**
-   - 首次将 Git 版本控制思想应用于 AI 对话上下文
-   - COW 分支创建：315x 加速，82% 存储节省
+| 文档 | 描述 | 语言 |
+|------|------|------|
+| **[USAGE.md](USAGE.md)** | 完整使用指南 | 英文 |
+| **[doc/README.md](doc/README.md)** | 文档索引 | 中文 |
+| **[doc/ARCHITECTURE.md](doc/ARCHITECTURE.md)** | 系统架构设计 | 中文 |
+| **[doc/QUICKSTART.md](doc/QUICKSTART.md)** | 5 分钟快速开始 | 中文 |
 
-2. **AI 辅助冲突解决框架**
-   - 语义冲突理解，超越文本 diff
-   - 用户研究：60% 时间减少，35% 质量提升
-
-3. **LSM-Tree 优化存储引擎**
-   - 写入合并：批量写入 0.26µs/项
-   - 自适应预分配：40% 碎片减少
-
-4. **故障注入与崩溃恢复框架**
-   - 55 个测试用例，100% 通过率
-   - 零数据丢失保证
-
-### 目标会议
-
-- **ICSE 2027** (主投) - 软件工程顶会
-- **AAAI 2027** (备选) - AI 顶会
-- **VLDB 2027** (备选) - 数据库顶会
-
-详细论文贡献：[doc/PAPER_CONTRIBUTIONS.md](doc/PAPER_CONTRIBUTIONS.md)
-
----
-
-## 文档
-
-### 快速开始
-- [QUICKSTART.md](doc/QUICKSTART.md) - 5 分钟快速开始
-- [USER_GUIDE.md](doc/USER_GUIDE.md) - 完整用户指南
-
-### 核心文档
-- [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) - 系统架构
-- [doc/PAPER_CONTRIBUTIONS.md](doc/PAPER_CONTRIBUTIONS.md) - 论文贡献点
-- [doc/PERFORMANCE_REPORT.md](doc/PERFORMANCE_REPORT.md) - 性能报告
-
-### 技术文档
-- [doc/FILEKV_OPTIMIZATION_REPORT.md](doc/FILEKV_OPTIMIZATION_REPORT.md) - 存储优化
-- [doc/P1_005_CRASH_RECOVERY_TESTS.md](doc/P1_005_CRASH_RECOVERY_TESTS.md) - 崩溃恢复
-- [doc/CONCURRENCY.md](doc/CONCURRENCY.md) - 并发模型
-
-完整文档索引：[doc/README.md](doc/README.md)
+更多资源：
+- **API 参考**: https://docs.rs/tokitai-context
+- **GitHub**: https://github.com/silverenternal/tokitai
+- **Issues**: https://github.com/silverenternal/tokitai/issues
 
 ---
 

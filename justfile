@@ -50,6 +50,37 @@ rebuild:
     cargo clean
     cargo build --tests
 
+# =============================================================================
+# Baseline Setup (for experiments)
+# =============================================================================
+
+# Setup all baseline systems
+setup-baseline:
+    @echo "=== Setting up all baseline systems ==="
+    cd experiment/baseline && python setup_all.py
+
+# Setup individual baseline systems
+setup-baseline-langchain:
+    @echo "=== Setting up LangChain baseline ==="
+    cd experiment/baseline && python scripts/setup_langchain.py
+
+setup-baseline-chromadb:
+    @echo "=== Setting up ChromaDB baseline ==="
+    cd experiment/baseline && python scripts/setup_chromadb.py
+
+setup-baseline-sqlite:
+    @echo "=== Setting up SQLite baseline ==="
+    cd experiment/baseline && python scripts/setup_sqlite.py
+
+setup-baseline-rocksdb:
+    @echo "=== Setting up RocksDB baseline ==="
+    cd experiment/baseline && python scripts/setup_rocksdb.py
+
+# Verify baseline installation
+verify-baseline:
+    @echo "=== Verifying baseline installation ==="
+    cd experiment/baseline && python verify_install.py
+
 # Help
 default:
     @echo "Available test commands:"
@@ -63,3 +94,11 @@ default:
     @echo "  just test-quick       - Run quick tests (skip slow)"
     @echo "  just coverage         - Generate coverage report"
     @echo "  just rebuild          - Clean and rebuild tests"
+    @echo ""
+    @echo "Baseline setup commands:"
+    @echo "  just setup-baseline         - Setup all baseline systems"
+    @echo "  just setup-baseline-langchain  - Setup LangChain baseline"
+    @echo "  just setup-baseline-chromadb   - Setup ChromaDB baseline"
+    @echo "  just setup-baseline-sqlite     - Setup SQLite baseline"
+    @echo "  just setup-baseline-rocksdb    - Setup RocksDB baseline"
+    @echo "  just verify-baseline        - Verify baseline installation"

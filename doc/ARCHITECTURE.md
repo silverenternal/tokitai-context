@@ -527,12 +527,11 @@ let mut ctx = Context::open_with_config("./.context", config)?;
 ## 参考文档
 
 - [QUICKSTART.md](QUICKSTART.md) - 快速开始
-- [USER_GUIDE.md](USER_GUIDE.md) - 用户指南
-- [PAPER_CONTRIBUTIONS.md](PAPER_CONTRIBUTIONS.md) - 论文贡献点
-- [PERFORMANCE_REPORT.md](PERFORMANCE_REPORT.md) - 性能报告
+- [USAGE.md](../USAGE.md) - 完整使用指南
+- [AI_ASSISTANT.md](../AI_ASSISTANT.md) - AI 助手配置指南
 
 ---
 
-**最后更新**: 2026-04-03  
-**维护者**: Tokitai Team  
+**最后更新**: 2026-04-06
+**维护者**: Tokitai Team
 **许可证**: MIT OR Apache-2.0
